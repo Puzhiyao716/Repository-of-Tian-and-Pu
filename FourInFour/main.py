@@ -141,7 +141,7 @@ manager = ConnectionManager()
 # 电脑玩家自动落子
 # ============================================================================
 
-COMPUTER_MOVE_DELAY = 0.8  # 电脑落子间隔（秒）
+COMPUTER_MOVE_DELAY = 0.1  # 电脑落子间隔（秒）
 
 
 async def process_computer_turns() -> None:
