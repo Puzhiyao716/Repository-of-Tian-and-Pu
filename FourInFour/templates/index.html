@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>四维四子棋 - 4D Four in a Row</title>
+<style>
+/* ================================================================
+   全局重置 & 页面背景
+   ================================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: "Microsoft YaHei", sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+
+/* 标题 & 副标题 */
+h1 { font-size: 28px; margin-bottom: 6px; letter-spacing: 4px; color: #e94560; }
+.subtitle { font-size: 13px; color: #888; margin-bottom: 16px; }
+
+/* ================================================================
+   主布局：左侧信息面板 + 中间棋盘
+   ================================================================ */
+.main-container { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+
+/* ---- 左侧信息面板（座位列表 + 策略选择 + 开始按钮） ---- */
+.info-panel { background: #16213e; border-radius: 12px; padding: 20px; width: 220px; min-height: 300px; }
+.info-panel h3 { font-size: 16px; border-bottom: 2px solid #0f3460; padding-bottom: 8px; margin-bottom: 16px; }
+
+/* 每个座位行：符号 + 名称 + 状态/按钮区 */
+.player-info { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #0f3460; }
+.player-info:last-child { border-bottom: none; }
+
+/* 座位符号（○✕△），位于每行最左侧 */
+.player-symbol { font-size: 28px; width: 40px; text-align: center; }
+.p1 { color: #4ecca3; } .p2 { color: #e94560; } .p3 { color: #f5c518; }
+
+/* 座位状态文字（"坐下/站起/已就位"等按钮由 JS 动态填充） */
+.player-status { font-size: 12px; color: #888; }
+.player-status.online { color: #4ecca3; }
+.player-status.current { color: #f5c518; font-weight: bold; }
+
+/* ================================================================
+   棋盘区域
+   ================================================================ */
+.board-wrapper { background: #16213e; border-radius: 12px; padding: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+
+/* 16×16 网格，gap=1px 产生细线，背景色穿透形成内部格线 */
+.board-grid { display: grid; grid-template-columns: repeat(16, 36px); grid-template-rows: repeat(16, 36px); gap: 1px; background: #0f3460; }
+
+/* 单个格子 */
+.cell { width: 36px; height: 36px; background: #1a1a2e; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 22px; user-select: none; transition: background 0.15s; }
+
+/* 小棋盘之间的红色分隔线（block-* 只加一侧，相邻两格共享一条线不重叠） */
+.cell.block-right { border-right: 3px solid #e94560; }   /* 每个小棋盘右边界 */
+.cell.block-bottom { border-bottom: 3px solid #e94560; } /* 每个小棋盘下边界 */
+.cell.block-left { border-left: 3px solid #e94560; }     /* 每个小棋盘左边界（含棋盘外边缘） */
+.cell.block-top { border-top: 3px solid #e94560; }       /* 每个小棋盘上边界（含棋盘外边缘） */
+
+/* 鼠标悬停高亮 */
+.cell:hover { background: #233056; }
+
+/* 三位玩家的棋子颜色与大小（圆圈和三角放大20%） */
+.cell.player-1 { color: #4ecca3; font-size: 26px; }
+.cell.player-2 { color: #e94560; }
+.cell.player-3 { color: #f5c518; font-size: 26px; }
+
+/* 最后一手落子高亮（白色内阴影） */
+.cell.last-move { box-shadow: inset 0 0 0 2px #ffffff; border-radius: 2px; }
+
+/* 获胜闪烁动画 */
+@keyframes win-glow { 0%,100%{box-shadow:inset 0 0 0 2px #fff;} 50%{box-shadow:inset 0 0 0 4px #f5c518,0 0 12px #f5c518;} }
+.cell.win-highlight { animation: win-glow 0.6s ease-in-out infinite; }
+
+/* ================================================================
+   底部状态栏 & 按钮
+   ================================================================ */
+.status-bar { margin-top: 16px; display: flex; gap: 20px; align-items: center; justify-content: center; flex-wrap: wrap; }
+
+/* 当前回合指示器 */
+.turn-indicator { font-size: 18px; padding: 8px 20px; background: #0f3460; border-radius: 8px; }
+.turn-indicator .symbol { font-size: 24px; }
+
+/* 通用按钮 */
+.btn { padding: 10px 24px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: bold; }
+.btn-reset { background: #e94560; color: white; } .btn-reset:hover { background: #c73650; }
+.btn-start { background: #4ecca3; color: #1a1a2e; margin-top: 12px; width: 100%; } .btn-start:hover { background: #3db890; }
+
+/* 按钮组（策略选择器 + 操作按钮同行排列） */
+.btn-group { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+.sel-strategy { padding: 8px 10px; border-radius: 6px; background: #0f3460; color: #ccc; border: 1px solid #4ecca3; font-size: 13px; }
+
+/* 座位行内小按钮（坐下/站起/机器人/删除） */
+.btn-sm { padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; border: none; margin-left: 4px; }
+.btn-sit { background: #4ecca3; color: #1a1a2e; } .btn-sit:hover { background: #3db890; }
+.btn-stand { background: #e94560; color: #fff; } .btn-stand:hover { background: #c73650; }
+.btn-bot { background: #0f3460; color: #4ecca3; border: 1px solid #4ecca3; } .btn-bot:hover { background: #1a4a7a; }
+.btn-del { background: #e94560; color: #fff; } .btn-del:hover { background: #c73650; }
+
+/* ================================================================
+   日志面板
+   ================================================================ */
+.log-panel { background: #16213e; border-radius: 12px; padding: 16px; margin-top: 16px; width: 100%; max-width: 640px; max-height: 150px; overflow-y: auto; }
+.log-panel h3 { font-size: 14px; margin-bottom: 8px; color: #888; }
+.log-entry { font-size: 12px; padding: 3px 0; border-bottom: 1px solid #0f3460; color: #aaa; }
+
+/* ================================================================
+   响应式：小屏幕缩小棋盘
+   ================================================================ */
+@media (max-width: 700px) {
+.board-grid { grid-template-columns: repeat(16, 24px); grid-template-rows: repeat(16, 24px); }
+.cell { width: 24px; height: 24px; font-size: 16px; }
+.info-panel { width: 160px; padding: 12px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ====== 页面标题 ====== -->
+<h1>四 维 四 子 棋</h1>
+<div class="subtitle">4D Four-in-a-Row — 4×4×4×4</div>
+
+<!-- ====== 主内容区：左侧面板 + 棋盘 ====== -->
+<div class="main-container">
+
+  <!-- === 左侧信息面板 === -->
+  <div class="info-panel">
+    <h3>👥 座位</h3>
+
+    <!-- 座位1：圆圈 ○ -->
+    <div class="player-info">
+      <span class="player-symbol p1">○</span><span>座位1</span>
+      <span class="player-status" id="slot1"></span>
+    </div>
+
+    <!-- 座位2：叉号 ✕ -->
+    <div class="player-info">
+      <span class="player-symbol p2">✕</span><span>座位2</span>
+      <span class="player-status" id="slot2"></span>
+    </div>
+
+    <!-- 座位3：三角 △ -->
+    <div class="player-info">
+      <span class="player-symbol p3">△</span><span>座位3</span>
+      <span class="player-status" id="slot3"></span>
+    </div>
+
+    <!-- 机器人策略选择器（下拉框） -->
+    <div class="btn-group" style="margin-top:12px">
+      <select id="selStrategy" class="sel-strategy">
+        <option value="random">随机型</option>
+        <option value="普通型">普通型</option>
+      </select>
+    </div>
+
+    <!-- 开始游戏按钮（仅满3人且未开始时显示） -->
+    <button class="btn btn-start" id="btnStartGame" style="display:none;">▶ 开始游戏</button>
+  </div>
+
+  <!-- === 16×16 棋盘（由 JS 动态生成格子） === -->
+  <div class="board-wrapper">
+    <div class="board-grid" id="boardGrid"></div>
+  </div>
+
+</div>
+
+<!-- ====== 底部状态栏：回合指示 + 重置按钮 ====== -->
+<div class="status-bar">
+  <div class="turn-indicator" id="turnIndicator">
+    当前回合：<span class="symbol">—</span>
+  </div>
+  <button class="btn btn-reset" id="btnReset">🔄 重新开始</button>
+</div>
+
+<!-- ====== 游戏日志面板 ====== -->
+<div class="log-panel">
+  <h3>📋 游戏日志</h3>
+  <div id="logEntries"></div>
+</div>
+
+<!-- ====== 前端逻辑脚本 ====== -->
+<script src="/static/game.js"></script>
+
+</body>
+</html>
