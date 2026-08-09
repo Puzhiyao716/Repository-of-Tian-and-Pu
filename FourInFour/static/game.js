@@ -8,6 +8,7 @@ const COL = { 1: "player-1", 2: "player-2", 3: "player-3" };
 let mySlot = null, gameOver = false, started = false;
 let currentTurn = 1, boardState = [], lastMoves = {};
 let playerCount = 0, playerTypes = {}, playerStrategies = {};
+let winningLine = [];
 
 // DOM
 const bg = document.getElementById("boardGrid");
@@ -54,6 +55,17 @@ function renderBoard() {
     }
     for (const [pid, pos] of Object.entries(lastMoves)) {
         const [r, c] = pos; bg.children[r*16+c].classList.add("last-move");
+    }
+    // 高亮获胜四子
+    for (const [r, c] of winningLine) {
+        bg.children[r*16+c].classList.add("win-highlight");
+    }
+    // 回合提示：棋盘周围发光
+    const wrapper = document.querySelector(".board-wrapper");
+    if (!gameOver && started && mySlot !== null && mySlot === currentTurn) {
+        wrapper.classList.add("my-turn");
+    } else {
+        wrapper.classList.remove("my-turn");
     }
     updateTurnUI();
 }
@@ -136,6 +148,7 @@ function handleMsg(msg) {
         started = msg.started || false;
         playerTypes = msg.player_types || {};
         playerStrategies = msg.player_strategies || {};
+        winningLine = msg.winning_line || [];
         renderBoard(); updateUI();
         if (msg.game_over) handleGameOver(msg.winner);
         break;

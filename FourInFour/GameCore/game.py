@@ -20,7 +20,7 @@ from .board import (
     EMPTY, PLAYER_1, PLAYER_2, PLAYER_3,
     TOTAL_CELLS, PLAYER_SYMBOLS,
     pos_2d_to_4d, pos_4d_to_index, pos_index_to_4d,
-    check_win_at,
+    check_win_at, get_winning_line,
 )
 from .player import Player, HumanPlayer, ComputerPlayerRandom, ComputerPlayerNormal
 
@@ -45,6 +45,7 @@ class GameRoom:
         self.move_count: int = 0
         self.game_over: bool = False
         self.winner: int = EMPTY
+        self.winning_line: List[int] = []       # 获胜线的 4 个一维索引
         self.players: Dict[int, Player] = {}          # 游戏中活跃玩家
         self._reservations: Dict[int, object] = {}    # 座位预约
         self.started: bool = False
@@ -205,6 +206,7 @@ class GameRoom:
         if check_win_at(self.board, index, player_id):
             self.game_over = True
             self.winner = player_id
+            self.winning_line = get_winning_line(self.board, index, player_id)
             return self._build_result(
                 success=True,
                 message=f"玩家 {player_id} ({PLAYER_SYMBOLS[player_id]}) 获胜！",
@@ -305,6 +307,12 @@ class GameRoom:
                     player_strategies[slot] = reservation[1]  # "random" or "普通型"
             player_count = len(self._reservations)
 
+        # 将获胜线索引转换为 2D 坐标
+        winning_line_2d: List[List[int]] = []
+        for idx in self.winning_line:
+            _w, _x, _y, _z = pos_index_to_4d(idx)
+            winning_line_2d.append([4 * _w + _x, 4 * _y + _z])
+
         return {
             "board": self.board,
             "current_turn": self.current_turn,
@@ -316,6 +324,7 @@ class GameRoom:
             "player_types": player_types,
             "player_strategies": player_strategies,
             "last_moves": last_moves_2d,
+            "winning_line": winning_line_2d,
         }
 
     # ------------------------------------------------------------------
@@ -333,6 +342,7 @@ class GameRoom:
         self.move_count = 0
         self.game_over = False
         self.winner = EMPTY
+        self.winning_line = []
         self.started = False
         self.players.clear()          # 销毁 Player 实例
         self._last_move_index = {}

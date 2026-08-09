@@ -40,7 +40,17 @@ h1 { font-size: 28px; margin-bottom: 6px; letter-spacing: 4px; color: #e94560; }
 /* ================================================================
    棋盘区域
    ================================================================ */
-.board-wrapper { background: #16213e; border-radius: 12px; padding: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+.board-wrapper { background: #16213e; border-radius: 12px; padding: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); transition: box-shadow 0.3s ease; }
+
+/* 轮到己方时的发光边框 */
+.board-wrapper.my-turn {
+    box-shadow: 0 0 20px rgba(78, 204, 163, 0.6), 0 0 50px rgba(78, 204, 163, 0.3), 0 8px 32px rgba(0,0,0,0.4);
+    animation: turn-glow 1.5s ease-in-out infinite;
+}
+@keyframes turn-glow {
+    0%, 100% { box-shadow: 0 0 20px rgba(78, 204, 163, 0.6), 0 0 50px rgba(78, 204, 163, 0.3), 0 8px 32px rgba(0,0,0,0.4); }
+    50% { box-shadow: 0 0 35px rgba(78, 204, 163, 0.8), 0 0 70px rgba(78, 204, 163, 0.5), 0 8px 32px rgba(0,0,0,0.4); }
+}
 
 /* 16×16 网格，gap=1px 产生细线，背景色穿透形成内部格线 */
 .board-grid { display: grid; grid-template-columns: repeat(16, 36px); grid-template-rows: repeat(16, 36px); gap: 1px; background: #0f3460; }

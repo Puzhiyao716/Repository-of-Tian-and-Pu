@@ -11,7 +11,7 @@ from .board import (
     PLAYER_SYMBOLS,
     pos_4d_to_2d, pos_2d_to_4d,
     pos_4d_to_index, pos_index_to_4d,
-    check_win_at, WINNING_LINES, LINES_BY_CELL,
+    check_win_at, get_winning_line, WINNING_LINES, LINES_BY_CELL,
 )
 from .player import Player, HumanPlayer, ComputerPlayerRandom, ComputerPlayerNormal
 from .game import GameRoom
@@ -25,7 +25,7 @@ __all__ = [
     "pos_4d_to_2d", "pos_2d_to_4d",
     "pos_4d_to_index", "pos_index_to_4d",
     # 胜负检测
-    "check_win_at", "WINNING_LINES", "LINES_BY_CELL",
+    "check_win_at", "get_winning_line", "WINNING_LINES", "LINES_BY_CELL",
     # 玩家
     "Player", "HumanPlayer", "ComputerPlayerRandom", "ComputerPlayerNormal",
     # 游戏房间

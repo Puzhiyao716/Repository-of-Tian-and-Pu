@@ -197,3 +197,22 @@ def check_win_at(
         if all(board[idx] == player for idx in line):
             return True
     return False
+
+
+def get_winning_line(
+    board: List[int],
+    last_move_index: int,
+    player: int
+) -> List[int]:
+    """
+    获取获胜线的 4 个格子一维索引。
+
+    参数同 check_win_at。
+
+    返回：
+        获胜线的 4 个一维索引列表；若未获胜则返回空列表。
+    """
+    for line in LINES_BY_CELL[last_move_index]:
+        if all(board[idx] == player for idx in line):
+            return list(line)
+    return []
