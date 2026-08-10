@@ -35,8 +35,11 @@ class GameRoom:
         move_count:    已落子总数
         game_over:     游戏是否已结束
         winner:        获胜者编号（0=无/平局）
+        winning_line:  获胜线的 4 个一维索引
         players:       活跃玩家 {player_id: Player}（start_game 时创建，reset 时销毁）
         _reservations: 座位预约 {slot: "human" | ("computer", "random"|"普通型")}
+        started:       游戏是否已开始
+        last_move_index: {player_id: last_move_index}，用于快照显示最后落子
     """
 
     def __init__(self) -> None:
