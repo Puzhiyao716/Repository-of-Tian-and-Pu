@@ -8,6 +8,7 @@ const COL = { 1: "player-1", 2: "player-2", 3: "player-3" };
 let mySlot = null, gameOver = false, started = false;
 let currentTurn = 1, boardState = [], lastMoves = {};
 let playerCount = 0, playerTypes = {}, playerStrategies = {};
+let playerTimeLimits = {}, playerMaxIters = {};
 let winningLine = [];
 
 // DOM
@@ -103,7 +104,12 @@ function updateSlots() {
             const act = btn.dataset.act, slot = parseInt(btn.dataset.slot);
             if (act === "sit") send({ type: "sit", slot });
             else if (act === "stand") send({ type: "stand" });
-            else if (act === "add_robot") send({ type: "add_robot", slot, strategy: document.getElementById("selStrategy").value });
+            else if (act === "add_robot") send({
+                type: "add_robot", slot,
+                strategy: document.getElementById("selStrategy").value,
+                time_limit: parseFloat(document.getElementById("inpTimeLimit").value) || 5.0,
+                max_iters: parseInt(document.getElementById("inpMaxIters").value) || 30000,
+            });
             else if (act === "remove_robot") send({ type: "remove_robot", slot });
         });
     });
@@ -148,6 +154,8 @@ function handleMsg(msg) {
         started = msg.started || false;
         playerTypes = msg.player_types || {};
         playerStrategies = msg.player_strategies || {};
+        playerTimeLimits = msg.player_time_limits || {};
+        playerMaxIters = msg.player_max_iters || {};
         winningLine = msg.winning_line || [];
         renderBoard(); updateUI();
         if (msg.game_over) handleGameOver(msg.winner);
@@ -155,7 +163,11 @@ function handleMsg(msg) {
     case "move_result":
         if (msg.success) {
             const m = msg.move;
-            addLog(`玩家${m.player}(${SYM[m.player]})落子[${m.row},${m.col}] 4D:${m.w},${m.x},${m.y},${m.z}`);
+            let logMsg = `玩家${m.player}(${SYM[m.player]})落子[${m.row},${m.col}] 4D:${m.w},${m.x},${m.y},${m.z}`;
+            if (msg.thinking) {
+                logMsg += `  |  思考 ${msg.thinking.time}s · ${msg.thinking.iters} 次迭代`;
+            }
+            addLog(logMsg);
             if (msg.game_over) handleGameOver(msg.winner);
         } else addLog(`⚠ ${msg.message}`);
         break;

@@ -87,18 +87,21 @@ class MCTSEngine:
     max_iters : 每次搜索迭代上限
     """
 
-    def __init__(self, player_id, time_limit=5.0, max_iters=20000):
+    def __init__(self, player_id, time_limit=5.0, max_iters=30000):
         self.player_id = player_id
         self.time_limit = time_limit
         self.max_iters = max_iters
 
     def choose_move(self, board, turn):
         """
-        给定棋盘和当前回合，返回 AI 选择的落子 (row, col)。
+        给定棋盘和当前回合，返回 AI 选择的落子与思考统计。
+
+        返回: (row, col, elapsed_time, iterations)
         """
         root = _Node(list(board), turn)
 
         t0 = time.time()
+        actual_iters = 0
         for _ in range(self.max_iters):
             if time.time() - t0 > self.time_limit:
                 break
@@ -106,29 +109,16 @@ class MCTSEngine:
             leaf = self._select(root)               # 1. Selection + Expansion
             winner = self._simulate(leaf)            # 2. Simulation
             self._backprop(leaf, winner)             # 3. Backpropagation
-            #print(
-            #"ITER",
-            #_,
-            #"root visits",
-            #root.visits,
-            #"children",
-            #len(root.children),
-            #"untried",
-            #len(root.get_untried_moves())
-            #)
+            actual_iters += 1
 
         if not root.children:
             raise RuntimeError("无可落子位置")
 
         best = max(root.children, key=lambda c: c.visits)
-        #for c in root.children:
-        #    print(
-        #    c.move,
-        #    c.visits,
-        #    c.wins
-        #    )
-        print("Best move:", best.move, "Visits:", best.visits, "Wins:", best.wins)
-        return best.move
+        elapsed = time.time() - t0
+        print("Best move:", best.move, "Visits:", best.visits, "Wins:", best.wins,
+              "Time:", f"{elapsed:.3f}s", "Iters:", actual_iters)
+        return best.move, elapsed, actual_iters
 
     # ---- Selection & Expansion ----
 

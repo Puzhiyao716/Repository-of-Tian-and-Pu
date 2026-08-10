@@ -101,16 +101,29 @@ class ComputerPlayerNormal(Player):
     普通型电脑 —— 蒙特卡洛树搜索 + UCB1。
 
     以自己赢为第一目的，假设所有对手也各自为赢而奋斗。
-    MCTS 引擎惰性初始化，每次搜索约 2 秒。
+    MCTS 引擎惰性初始化。
     """
 
-    def __init__(self, player_id: int) -> None:
+    def __init__(self, player_id: int,
+                 time_limit: float = 5.0, max_iters: int = 30000) -> None:
         super().__init__(player_id)
         self._mcts_engine = None  # 惰性初始化
+        self._time_limit = time_limit
+        self._max_iters = max_iters
+        self._last_thinking_time: float = 0.0
+        self._last_thinking_iters: int = 0
 
     @property
     def is_human(self) -> bool:
         return False
+
+    @property
+    def thinking_stats(self) -> dict:
+        """返回最近一次思考的统计信息。"""
+        return {
+            "time": round(self._last_thinking_time, 3),
+            "iters": self._last_thinking_iters,
+        }
 
     def choose_move(self, board: List[int]) -> Tuple[int, int]:
         """使用 MCTS 搜索选择落子。"""
@@ -118,10 +131,14 @@ class ComputerPlayerNormal(Player):
             from FourInFour.AI.mcts import MCTSEngine
             self._mcts_engine = MCTSEngine(
                 player_id=self.player_id,
-                time_limit=2.0,
-                max_iters=30000,
+                time_limit=self._time_limit,
+                max_iters=self._max_iters,
             )
-        return self._mcts_engine.choose_move(board, self.player_id)
+        (row, col), elapsed, iters = self._mcts_engine.choose_move(
+            board, self.player_id)
+        self._last_thinking_time = elapsed
+        self._last_thinking_iters = iters
+        return (row, col)
 
 
 # ============================================================================

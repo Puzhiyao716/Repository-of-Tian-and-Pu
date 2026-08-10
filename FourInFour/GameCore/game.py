@@ -84,11 +84,12 @@ class GameRoom:
             return True
         return False
 
-    def add_robot(self, slot: int, strategy: str = "random") -> bool:
+    def add_robot(self, slot: int, strategy: str = "random",
+                  time_limit: float = 5.0, max_iters: int = 30000) -> bool:
         """在座位放置机器人预约。"""
         if not self._slot_free(slot):
             return False
-        self._reservations[slot] = ("computer", strategy)
+        self._reservations[slot] = ("computer", strategy, time_limit, max_iters)
         return True
 
     def remove_robot(self, slot: int) -> bool:
@@ -131,9 +132,11 @@ class GameRoom:
             if reservation == "human":
                 self.players[slot] = HumanPlayer(slot)
             elif isinstance(reservation, tuple) and reservation[0] == "computer":
-                _, strategy = reservation
+                _, strategy, *rest = reservation
+                tl = rest[0] if len(rest) > 0 else 5.0
+                mi = rest[1] if len(rest) > 1 else 30000
                 if strategy == "普通型":
-                    self.players[slot] = ComputerPlayerNormal(slot)
+                    self.players[slot] = ComputerPlayerNormal(slot, time_limit=tl, max_iters=mi)
                 else:
                     self.players[slot] = ComputerPlayerRandom(slot)
 
@@ -144,18 +147,22 @@ class GameRoom:
     # 落子逻辑（拆分为 3 个小函数，每函数 < 100 行）
     # ------------------------------------------------------------------
 
-    def make_move(self, player_id: int, row: int, col: int) -> dict:
+    def make_move(self, player_id: int, row: int, col: int,
+                  thinking_time: float = 0.0, thinking_iters: int = 0) -> dict:
         """
         处理一次落子请求（对外统一入口）。
 
-        返回 dict: {success, message, game_over, winner, move?}
+        thinking_time / thinking_iters: AI 思考统计（仅电脑落子时有值）。
+
+        返回 dict: {success, message, game_over, winner, move?, thinking?}
         """
         error = self._validate_move(player_id, row, col)
         if error:
             return error
 
         w, x, y, z, index = self._place_piece(player_id, row, col)
-        return self._finish_turn(player_id, row, col, w, x, y, z, index)
+        return self._finish_turn(player_id, row, col, w, x, y, z, index,
+                                 thinking_time, thinking_iters)
 
     def _validate_move(
         self, player_id: int, row: int, col: int
@@ -200,6 +207,7 @@ class GameRoom:
     def _finish_turn(
         self, player_id: int, row: int, col: int,
         w: int, x: int, y: int, z: int, index: int,
+        thinking_time: float = 0.0, thinking_iters: int = 0,
     ) -> dict:
         """落子后的胜负/平局检测与回合切换。"""
         # 胜负检测
@@ -213,6 +221,7 @@ class GameRoom:
                 game_over=True, winner=player_id,
                 player=player_id, row=row, col=col,
                 w=w, x=x, y=y, z=z, index=index,
+                thinking_time=thinking_time, thinking_iters=thinking_iters,
             )
 
         # 平局检测
@@ -225,6 +234,7 @@ class GameRoom:
                 game_over=True, winner=EMPTY,
                 player=player_id, row=row, col=col,
                 w=w, x=x, y=y, z=z, index=index,
+                thinking_time=thinking_time, thinking_iters=thinking_iters,
             )
 
         # 正常切换回合：1→2→3→1…
@@ -235,6 +245,7 @@ class GameRoom:
             game_over=False, winner=EMPTY,
             player=player_id, row=row, col=col,
             w=w, x=x, y=y, z=z, index=index,
+            thinking_time=thinking_time, thinking_iters=thinking_iters,
         )
 
 
@@ -257,9 +268,10 @@ class GameRoom:
         success: bool, message: str, game_over: bool, winner: int,
         player: int, row: int, col: int,
         w: int, x: int, y: int, z: int, index: int,
+        thinking_time: float = 0.0, thinking_iters: int = 0,
     ) -> dict:
         """构建统一的落子操作返回字典。"""
-        return {
+        result = {
             "success": success,
             "message": message,
             "game_over": game_over,
@@ -271,6 +283,12 @@ class GameRoom:
                 "index": index,
             },
         }
+        if thinking_iters > 0:
+            result["thinking"] = {
+                "time": round(thinking_time, 3),
+                "iters": thinking_iters,
+            }
+        return result
 
     # ------------------------------------------------------------------
     # 状态快照
@@ -290,6 +308,8 @@ class GameRoom:
 
         player_types: Dict[int, str] = {}
         player_strategies: Dict[int, str] = {}
+        player_time_limits: Dict[int, float] = {}
+        player_max_iters: Dict[int, int] = {}
         player_count: int = 0
 
         if self.started:
@@ -305,6 +325,10 @@ class GameRoom:
                 elif isinstance(reservation, tuple) and reservation[0] == "computer":
                     player_types[slot] = "computer"
                     player_strategies[slot] = reservation[1]  # "random" or "普通型"
+                    if len(reservation) >= 3:
+                        player_time_limits[slot] = reservation[2]
+                    if len(reservation) >= 4:
+                        player_max_iters[slot] = reservation[3]
             player_count = len(self._reservations)
 
         # 将获胜线索引转换为 2D 坐标
@@ -325,6 +349,8 @@ class GameRoom:
             "player_strategies": player_strategies,
             "last_moves": last_moves_2d,
             "winning_line": winning_line_2d,
+            "player_time_limits": player_time_limits,
+            "player_max_iters": player_max_iters,
         }
 
     # ------------------------------------------------------------------
