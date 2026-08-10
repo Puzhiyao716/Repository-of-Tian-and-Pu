@@ -15,7 +15,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 import random
 
 from .board import PLAYER_SYMBOLS, pos_2d_to_4d, pos_4d_to_index
@@ -83,8 +83,9 @@ class ComputerPlayerRandom(Player):
     def is_human(self) -> bool:
         return False
 
-    def choose_move(self, board: List[int]) -> Tuple[int, int]:
-        """随机选择一个合法空位。"""
+    def choose_move(self, board: List[int],
+                    last_moves: dict = None) -> Tuple[int, int]:
+        """随机选择一个合法空位。last_moves 参数为接口兼容，本策略不使用。"""
         empty = [i for i, v in enumerate(board) if v == 0]
         if not empty:
             raise RuntimeError("棋盘已满，无法落子")
@@ -102,6 +103,7 @@ class ComputerPlayerNormal(Player):
 
     以自己赢为第一目的，假设所有对手也各自为赢而奋斗。
     MCTS 引擎惰性初始化。
+    追踪所有玩家最近一步棋，供 MCTS 计算必胜点。
     """
 
     def __init__(self, player_id: int,
@@ -112,6 +114,8 @@ class ComputerPlayerNormal(Player):
         self._max_iters = max_iters
         self._last_thinking_time: float = 0.0
         self._last_thinking_iters: int = 0
+        # 追踪所有玩家的最近一步棋：{player_id: 一维索引}
+        self._last_move_index: Dict[int, int] = {}
 
     @property
     def is_human(self) -> bool:
@@ -125,8 +129,26 @@ class ComputerPlayerNormal(Player):
             "iters": self._last_thinking_iters,
         }
 
-    def choose_move(self, board: List[int]) -> Tuple[int, int]:
-        """使用 MCTS 搜索选择落子。"""
+    def record_move(self, row: int, col: int) -> None:
+        """记录落子（同时转为一维索引供 MCTS 使用）。"""
+        super().record_move(row, col)
+        w, x, y, z = pos_2d_to_4d(row, col)
+        idx = pos_4d_to_index(w, x, y, z)
+        self._last_move_index[self.player_id] = idx
+
+    def clear_moves(self) -> None:
+        """清空落子记录（同时清空索引追踪）。"""
+        super().clear_moves()
+        self._last_move_index.clear()
+
+    def choose_move(self, board: List[int],
+                    last_moves: dict = None) -> Tuple[int, int]:
+        """
+        使用 MCTS 搜索选择落子。
+
+        last_moves: {player_id: 一维索引}，所有玩家最近一步棋。
+                    供 MCTS 在 root 节点计算必胜点。
+        """
         if self._mcts_engine is None:
             from FourInFour.AI.mcts import MCTSEngine
             self._mcts_engine = MCTSEngine(
@@ -134,8 +156,13 @@ class ComputerPlayerNormal(Player):
                 time_limit=self._time_limit,
                 max_iters=self._max_iters,
             )
+        # 合并内部追踪的 last_moves 与外部传入的 last_moves
+        merged = {}
+        if last_moves:
+            merged.update(last_moves)
+        merged.update(self._last_move_index)
         (row, col), elapsed, iters = self._mcts_engine.choose_move(
-            board, self.player_id)
+            board, self.player_id, merged)
         self._last_thinking_time = elapsed
         self._last_thinking_iters = iters
         return (row, col)

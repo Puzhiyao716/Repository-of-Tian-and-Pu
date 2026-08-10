@@ -169,8 +169,8 @@ async def process_computer_turns() -> None:
         if player is None:
             break
 
-        # 电脑选择落子位置
-        row, col = player.choose_move(game.board)
+        # 电脑选择落子位置（传入所有玩家最近一步棋的索引）
+        row, col = player.choose_move(game.board, game._last_move_index)
 
         # 提取思考统计（普通型 AI 才有效）
         thinking_time = 0.0

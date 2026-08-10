@@ -153,7 +153,6 @@ def _generate_all_winning_lines() -> List[List[int]]:
 # 模块加载时一次性预计算，后续只读取
 WINNING_LINES: List[List[int]] = _generate_all_winning_lines()
 
-
 # ============================================================================
 # 索引 → 获胜线映射（用于加速增量式检测）
 # ============================================================================
@@ -171,7 +170,10 @@ def _build_lines_by_cell() -> List[List[List[int]]]:
 
 
 LINES_BY_CELL: List[List[List[int]]] = _build_lines_by_cell()
-
+# print("[TESTINFO] 预计算完成：总线数：", len(WINNING_LINES), "总位置数：", len(LINES_BY_CELL))
+# print(f"[TESTINFO] WINNING_LINES : {type(WINNING_LINES)}, LINES_BY_CELL : {type(LINES_BY_CELL)}")
+# print(f"[TESTINFO] WINNING_LINES : {type(WINNING_LINES[0])}, LINES_BY_CELL : {type(LINES_BY_CELL[0])}")
+# print(f"[TESTINFO] WINNING_LINES : {len(WINNING_LINES[0])}, LINES_BY_CELL : {len(LINES_BY_CELL[0])}")
 
 # ============================================================================
 # 胜负检测（增量式）
@@ -180,23 +182,74 @@ LINES_BY_CELL: List[List[List[int]]] = _build_lines_by_cell()
 def check_win_at(
     board: List[int],
     last_move_index: int,
-    player: int
-) -> bool:
+    player: int,
+    potential_win: bool = False
+):
     """
-    增量式胜负检测：仅检测最后落子处是否达成四连。
+    增量式胜负检测：仅检测最后落子处是否达成四连；可选同时检测必胜点。
 
     参数：
         board:           长度为 256 的一维棋盘数组（0=空，1/2/3=玩家）
         last_move_index: 最后落子的一维索引
         player:          当前落子的玩家编号
+        potential_win:   False → 仅检测胜负，返回 bool
+                         True  → 同时检测至多两个必胜点，返回 (bool, list)
 
-    返回：
-        True 表示该玩家获胜
+    返回（potential_win=False）：
+        bool — True 表示该玩家已四连获胜
+
+    返回（potential_win=True）：
+        (has_won: bool, pot_points: List[List[int]])
+        has_won    — True 表示该玩家已四连获胜（此时 pot_points 为空）
+        pot_points — 必胜点 2D 坐标列表 [[row, col], ...]，至多两个
     """
-    for line in LINES_BY_CELL[last_move_index]:
-        if all(board[idx] == player for idx in line):
-            return True
-    return False
+    lines = LINES_BY_CELL[last_move_index]
+
+    # ---- 快速路径：仅检测胜负（默认行为，向后兼容）----
+    if not potential_win:
+        for line in lines:
+            i0, i1, i2, i3 = line
+            c0, c1, c2, c3 = board[i0], board[i1], board[i2], board[i3]
+            if c0 == player and c1 == player and c2 == player and c3 == player:
+                return True
+        return False
+
+    # ---- 完整路径：检测胜负 + 至多两个必胜点 ----
+    pot_points: List[List[int]] = []
+
+    for line in lines:
+        i0, i1, i2, i3 = line
+        c0, c1, c2, c3 = board[i0], board[i1], board[i2], board[i3]
+
+        # 三子已占 → 检查剩余一格是否为空（即必胜点）
+        cnt = (c0 == player) + (c1 == player) + (c2 == player) + (c3 == player)
+        if cnt == 4:
+            # 四连 → 直接获胜，无需关心必胜点
+            return True, []
+        
+        elif cnt == 3:
+            # 精确定位空位（必须显式验证 cX == EMPTY，排除对手占据的情况）
+            empty_idx: int = -1
+            if c0 == EMPTY:      empty_idx = i0
+            elif c1 == EMPTY:    empty_idx = i1
+            elif c2 == EMPTY:    empty_idx = i2
+            elif c3 == EMPTY:    empty_idx = i3
+            if empty_idx == -1:
+                continue          # 被对手阻挡，非必胜点
+
+            # 转 2D 坐标（内联避免函数调用）
+            _w = empty_idx // 64
+            _r = empty_idx % 64
+            _x = _r // 16
+            _r = _r % 16
+            _y = _r // 4
+            _z = _r % 4
+            pot_points.append([4 * _w + _x, 4 * _y + _z])
+
+            if len(pot_points) >= 2:
+                break
+
+    return False, pot_points
 
 
 def get_winning_line(
