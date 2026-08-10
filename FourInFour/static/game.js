@@ -163,7 +163,9 @@ function handleMsg(msg) {
     case "move_result":
         if (msg.success) {
             const m = msg.move;
-            let logMsg = `玩家${m.player}(${SYM[m.player]})落子[${m.row},${m.col}] 4D:${m.w},${m.x},${m.y},${m.z}`;
+            // 记录落子日志，使用1~4表示而不是0~3以符合玩家习惯
+            let logMsg = `玩家${m.player}(${SYM[m.player]})落子[${m.row + 1},${m.col + 1}] | 4D:${m.w + 1},${m.x + 1},${m.y + 1},${m.z + 1}`;
+            // 记录思考时间和迭代次数
             if (msg.thinking) {
                 logMsg += `  |  思考 ${msg.thinking.time}s · ${msg.thinking.iters} 次迭代`;
             }
