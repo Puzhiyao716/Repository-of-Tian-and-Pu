@@ -35,7 +35,7 @@ UCB_C = 1.414
 class _Node:
     """MCTS 搜索树节点。"""
 
-    __slots__ = ("board", "turn", "move", "parent", "children", "visits", "wins", "_untried", "winner")
+    __slots__ = ("board", "turn", "move", "parent", "children", "visits", "wins", "_untried", "winner", "losing_moves", "losing_checked")
 
     def __init__(self, board, turn, move=None, parent=None):
         self.board = board               # 棋盘状态（256 长度列表）
@@ -47,6 +47,9 @@ class _Node:
         self.wins = {1: 0, 2: 0, 3: 0}
         self._untried = None
         self.winner = None
+        self.losing_moves = []
+        self.losing_checked = False
+
     def get_untried_moves(self):
         """返回当前棋盘上所有空位（打乱以增加多样性）。"""
         if self._untried is None:
@@ -133,10 +136,14 @@ class MCTSEngine:
         while True:
             if self._is_terminal(node):
                 return node
-            # ===== 新增：扩展前检查必胜一步 =====
-            win_move = self._find_winning_move(node.board, node.turn)
-            if win_move is not None:
-                return self._expand_specific(node, win_move)
+            if not node.losing_checked:
+                # ===== 新增：扩展前检查必胜一步 =====
+                win_move = self._find_winning_move(node.board, node.turn)
+                if win_move is not None:
+                    return self._expand_specific(node, win_move)
+                node.losing_checked = True
+            if node.losing_moves:
+                return self._expand_specific(node, node.losing_moves[0])
             untried = node.get_untried_moves()
             if untried:
                 return self._expand(node, untried)
@@ -186,12 +193,12 @@ class MCTSEngine:
         turn = node.turn
 
         for _ in range(TOTAL_CELLS - sum(1 for v in board if v != EMPTY)):
-            if _ < 2:
+            #if _ < 2:
                 # 前两步下，当前玩家若有一步获胜，立即执行
-                win_move = MCTSEngine._find_winning_move(board, turn)
-                if win_move is not None:
-                    board[win_move] = turn
-                    return turn
+                #win_move = MCTSEngine._find_winning_move(board, turn)
+                #if win_move is not None:
+                #    board[win_move] = turn
+                #    return turn
 
             # 无必胜点，随机选择一步
             empty = [i for i, v in enumerate(board) if v == EMPTY]
@@ -227,8 +234,8 @@ class MCTSEngine:
             return True
         return False
 
-    @staticmethod
-    def _find_winning_move(board, player):
+#    @staticmethod
+#    def _find_winning_move(board, player):
         """
         查找 player 是否存在一步获胜的落子。
         存在则返回该位置索引，否则返回 None。
@@ -243,4 +250,24 @@ class MCTSEngine:
 
                 board[idx] = EMPTY
 
+        return None
+
+    @staticmethod
+    def _find_winning_move(board, player):
+        from FourInFour.GameCore.board import WINNING_LINES
+        for line in WINNING_LINES:
+            count = 0
+            empty_idx = None
+            for idx in line:
+                cell = board[idx]
+                if cell == player:
+                    count += 1
+                elif cell == EMPTY:
+                    empty_idx = idx
+                else:
+                    # 这条线上有对手棋子，不可能形成四连
+                    count = -1
+                    break
+            if count == 3 and empty_idx is not None:
+                return empty_idx
         return None
