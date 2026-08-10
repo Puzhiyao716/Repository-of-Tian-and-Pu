@@ -87,7 +87,7 @@ class MCTSEngine:
     max_iters : 每次搜索迭代上限
     """
 
-    def __init__(self, player_id, time_limit=5.0, max_iters=30000):
+    def __init__(self, player_id, time_limit=5.0, max_iters=10000):
         self.player_id = player_id
         self.time_limit = time_limit
         self.max_iters = max_iters

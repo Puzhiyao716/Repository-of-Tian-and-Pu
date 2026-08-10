@@ -85,7 +85,7 @@ class GameRoom:
         return False
 
     def add_robot(self, slot: int, strategy: str = "random",
-                  time_limit: float = 5.0, max_iters: int = 30000) -> bool:
+                  time_limit: float = 5.0, max_iters: int = 10000) -> bool:
         """在座位放置机器人预约。"""
         if not self._slot_free(slot):
             return False
@@ -134,7 +134,7 @@ class GameRoom:
             elif isinstance(reservation, tuple) and reservation[0] == "computer":
                 _, strategy, *rest = reservation
                 tl = rest[0] if len(rest) > 0 else 5.0
-                mi = rest[1] if len(rest) > 1 else 30000
+                mi = rest[1] if len(rest) > 1 else 10000
                 if strategy == "普通型":
                     self.players[slot] = ComputerPlayerNormal(slot, time_limit=tl, max_iters=mi)
                 else:

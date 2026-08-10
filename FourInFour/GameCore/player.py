@@ -105,7 +105,7 @@ class ComputerPlayerNormal(Player):
     """
 
     def __init__(self, player_id: int,
-                 time_limit: float = 5.0, max_iters: int = 30000) -> None:
+                 time_limit: float = 5.0, max_iters: int = 10000) -> None:
         super().__init__(player_id)
         self._mcts_engine = None  # 惰性初始化
         self._time_limit = time_limit
