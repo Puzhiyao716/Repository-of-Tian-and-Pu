@@ -143,6 +143,17 @@ manager = ConnectionManager()
 
 COMPUTER_MOVE_DELAY = 0.1  # 电脑落子间隔（秒）
 
+# 后台电脑落子 Task（支持重置中断）
+_computer_task: Optional[asyncio.Task] = None
+
+
+def _launch_computer_turns() -> None:
+    """启动后台电脑落子 Task（取消旧的以防重复）。"""
+    global _computer_task
+    if _computer_task and not _computer_task.done():
+        _computer_task.cancel()
+    _computer_task = asyncio.create_task(process_computer_turns())
+
 
 async def process_computer_turns() -> None:
     """
@@ -161,8 +172,17 @@ async def process_computer_turns() -> None:
         # 电脑选择落子位置
         row, col = player.choose_move(game.board)
 
+        # 提取思考统计（普通型 AI 才有效）
+        thinking_time = 0.0
+        thinking_iters = 0
+        if hasattr(player, 'thinking_stats'):
+            stats = player.thinking_stats
+            thinking_time = stats["time"]
+            thinking_iters = stats["iters"]
+
         # 执行落子
-        result = game.make_move(player.player_id, row, col)
+        result = game.make_move(player.player_id, row, col,
+                                thinking_time, thinking_iters)
 
         # 广播结果
         await manager.broadcast({"type": "move_result", **result})
@@ -241,10 +261,12 @@ async def websocket_endpoint(websocket: WebSocket):
             elif msg_type == "add_robot":
                 slot = data.get("slot")
                 strategy = data.get("strategy", "random")
+                time_limit = float(data.get("time_limit", 5.0))
+                max_iters = int(data.get("max_iters", 10000))
                 if slot not in (1, 2, 3):
                     await manager.send_to(websocket, {"type": "error", "message": "无效的座位号"})
                     continue
-                if not game.add_robot(slot, strategy):
+                if not game.add_robot(slot, strategy, time_limit, max_iters):
                     await manager.send_to(websocket, {"type": "error", "message": f"座位 {slot} 不可用"})
                     continue
                 await manager.broadcast({"type": "chat", "message": f"🤖 机器人[{strategy}]放置在座位 {slot}"})
@@ -296,7 +318,7 @@ async def _handle_move(websocket: WebSocket, data: dict, slot: Optional[int]) ->
     if result["success"]:
         await manager.broadcast({"type": "move_result", **result})
         await manager.broadcast({"type": "state", **game.get_state()})
-        await process_computer_turns()
+        _launch_computer_turns()
     else:
         await manager.send_to(websocket, {"type": "error", "message": result["message"]})
 
@@ -307,13 +329,17 @@ async def _handle_start_game() -> None:
     if result["success"]:
         await manager.broadcast({"type": "chat", "message": "游戏开始！"})
         await manager.broadcast({"type": "state", **game.get_state()})
-        await process_computer_turns()
+        _launch_computer_turns()
     else:
         await manager.broadcast({"type": "chat", "message": result["message"]})
 
 
 async def _handle_reset() -> None:
-    """重置游戏。"""
+    """重置游戏（先中断电脑回合）。"""
+    global _computer_task
+    if _computer_task and not _computer_task.done():
+        _computer_task.cancel()
+        _computer_task = None
     new_state = game.reset()
     await manager.broadcast({"type": "state", **new_state})
     await manager.broadcast({"type": "chat", "message": "游戏已重置，新一局开始！"})
