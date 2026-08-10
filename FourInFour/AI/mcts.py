@@ -193,12 +193,12 @@ class MCTSEngine:
         turn = node.turn
 
         for _ in range(TOTAL_CELLS - sum(1 for v in board if v != EMPTY)):
-            #if _ < 2:
+            if _ < 1:
                 # 前两步下，当前玩家若有一步获胜，立即执行
-                #win_move = MCTSEngine._find_winning_move(board, turn)
-                #if win_move is not None:
-                #    board[win_move] = turn
-                #    return turn
+                win_move = MCTSEngine._find_winning_move(board, turn)
+                if win_move is not None:
+                    board[win_move] = turn
+                    return turn
 
             # 无必胜点，随机选择一步
             empty = [i for i, v in enumerate(board) if v == EMPTY]
