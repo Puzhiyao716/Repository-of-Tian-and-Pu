@@ -35,7 +35,7 @@ UCB_C = 1.414
 class _Node:
     """MCTS 搜索树节点。"""
 
-    __slots__ = ("board", "turn", "move", "parent", "children", "visits", "wins", "_untried")
+    __slots__ = ("board", "turn", "move", "parent", "children", "visits", "wins", "_untried", "winner")
 
     def __init__(self, board, turn, move=None, parent=None):
         self.board = board               # 棋盘状态（256 长度列表）
@@ -46,7 +46,7 @@ class _Node:
         self.visits = 0
         self.wins = {1: 0, 2: 0, 3: 0}
         self._untried = None
-
+        self.winner = None
     def get_untried_moves(self):
         """返回当前棋盘上所有空位（打乱以增加多样性）。"""
         if self._untried is None:
@@ -87,7 +87,7 @@ class MCTSEngine:
     max_iters : 每次搜索迭代上限
     """
 
-    def __init__(self, player_id, time_limit=2.0, max_iters=20000):
+    def __init__(self, player_id, time_limit=5.0, max_iters=20000):
         self.player_id = player_id
         self.time_limit = time_limit
         self.max_iters = max_iters
@@ -106,11 +106,28 @@ class MCTSEngine:
             leaf = self._select(root)               # 1. Selection + Expansion
             winner = self._simulate(leaf)            # 2. Simulation
             self._backprop(leaf, winner)             # 3. Backpropagation
+            #print(
+            #"ITER",
+            #_,
+            #"root visits",
+            #root.visits,
+            #"children",
+            #len(root.children),
+            #"untried",
+            #len(root.get_untried_moves())
+            #)
 
         if not root.children:
             raise RuntimeError("无可落子位置")
 
         best = max(root.children, key=lambda c: c.visits)
+        #for c in root.children:
+        #    print(
+        #    c.move,
+        #    c.visits,
+        #    c.wins
+        #    )
+        print("Best move:", best.move, "Visits:", best.visits, "Wins:", best.wins)
         return best.move
 
     # ---- Selection & Expansion ----
@@ -139,6 +156,11 @@ class MCTSEngine:
         next_turn = (parent.turn % 3) + 1
 
         child = _Node(new_board, next_turn, move=(row, col), parent=parent)
+
+        # 检查刚才这一步有没有赢
+        if check_win_at(new_board, idx, parent.turn):
+            child.winner = parent.turn
+            
         parent.children.append(child)
         return child
 
@@ -146,19 +168,31 @@ class MCTSEngine:
 
     @staticmethod
     def _simulate(node):
-        """随机模拟至终局，返回胜者编号（0=平局）。"""
+        """带必胜判断的模拟至终局，返回胜者编号（0=平局）。"""
+
+        # 如果这个节点已经结束
+        if node.winner is not None:
+            return node.winner
         board = list(node.board)
         turn = node.turn
-        empty = [i for i, v in enumerate(board) if v == EMPTY]
-        random.shuffle(empty)
 
-        for idx in empty:
+        for _ in range(TOTAL_CELLS - sum(1 for v in board if v != EMPTY)):
+            if _ < 2:
+                # 前两步下，当前玩家若有一步获胜，立即执行
+                win_move = MCTSEngine._find_winning_move(board, turn)
+                if win_move is not None:
+                    board[win_move] = turn
+                    return turn
+
+            # 无必胜点，随机选择一步
+            empty = [i for i, v in enumerate(board) if v == EMPTY]
+            if not empty:
+                return 0
+            idx = random.choice(empty)
             board[idx] = turn
             if check_win_at(board, idx, turn):
                 return turn
             turn = (turn % 3) + 1
-
-        return 0
 
     # ---- Backpropagation ----
 
@@ -175,5 +209,29 @@ class MCTSEngine:
 
     @staticmethod
     def _is_terminal(node):
-        """无空位即终局。"""
-        return not node.get_untried_moves()
+        # 已经有人赢
+        if node.winner is not None:
+            return True
+        # 棋盘满
+        if not any(v == EMPTY for v in node.board):
+            node.winner = 0
+            return True
+        return False
+
+    @staticmethod
+    def _find_winning_move(board, player):
+        """
+        查找 player 是否存在一步获胜的落子。
+        存在则返回该位置索引，否则返回 None。
+        """
+        for idx, v in enumerate(board):
+            if v == EMPTY:
+                board[idx] = player
+
+                if check_win_at(board, idx, player):
+                    board[idx] = EMPTY
+                    return idx
+
+                board[idx] = EMPTY
+
+        return None
