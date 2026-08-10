@@ -21,7 +21,7 @@ import time
 from typing import List, Tuple, Optional
 
 from FourInFour.GameCore.board import (
-    EMPTY, TOTAL_CELLS, pos_4d_to_index, pos_2d_to_4d, check_win_at,
+    EMPTY, TOTAL_CELLS, pos_4d_to_index, pos_2d_to_4d, pos_index_to_4d, pos_4d_to_2d, check_win_at,
 )
 
 # UCB1 探索参数（√2 是理论最优值）
@@ -118,6 +118,9 @@ class MCTSEngine:
         elapsed = time.time() - t0
         print("Best move:", best.move, "Visits:", best.visits, "Wins:", best.wins,
               "Time:", f"{elapsed:.3f}s", "Iters:", actual_iters)
+        #选择一个次优解
+        second_best = sorted(root.children, key=lambda c: c.visits, reverse=True)[1]
+        print("Second best move:", second_best.move, "Visits:", second_best.visits, "Wins:", second_best.wins)
         return best.move, elapsed, actual_iters
 
     # ---- Selection & Expansion ----
@@ -130,6 +133,10 @@ class MCTSEngine:
         while True:
             if self._is_terminal(node):
                 return node
+            # ===== 新增：扩展前检查必胜一步 =====
+            win_move = self._find_winning_move(node.board, node.turn)
+            if win_move is not None:
+                return self._expand_specific(node, win_move)
             untried = node.get_untried_moves()
             if untried:
                 return self._expand(node, untried)
@@ -146,11 +153,23 @@ class MCTSEngine:
         next_turn = (parent.turn % 3) + 1
 
         child = _Node(new_board, next_turn, move=(row, col), parent=parent)
-
-        # 检查刚才这一步有没有赢
-        if check_win_at(new_board, idx, parent.turn):
-            child.winner = parent.turn
             
+        parent.children.append(child)
+        return child
+
+    def _expand_specific(self, parent, idx):
+        """扩展一个指定落子为子节点（必胜一步）。"""
+        w, x, y, z = pos_index_to_4d(idx)
+        row, col = pos_4d_to_2d(w, x, y, z)
+
+        new_board = list(parent.board)
+        new_board[idx] = parent.turn
+        next_turn = (parent.turn % 3) + 1
+
+        child = _Node(new_board, next_turn, move=(row, col), parent=parent)
+        
+        # 这个一定赢
+        child.winner = parent.turn
         parent.children.append(child)
         return child
 
