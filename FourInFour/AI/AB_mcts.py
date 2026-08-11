@@ -255,7 +255,7 @@ class _AB_Node:
         if own_keypoint:
             return list(own_keypoint)
 
-        # 规则 2：下家恰好一个必胜点，且上家无
+        # 规则 2：下家恰好一个必胜点，且上家不超过一个
         if len(down_keypoint) == 1 and len(up_keypoint) <= 1:
             return list(down_keypoint)
 
@@ -335,8 +335,8 @@ class ABMCTSEngine:
 
             # 开始蒙特卡洛
             leaf = self._select(root)               # 1. Selection + Expansion
-            winner = leaf._simulate()                # 2. Simulation
-            self._backprop(leaf, winner)             # 3. Backpropagation
+            score = leaf._simulate()                # 2. Simulation
+            self._backprop(leaf, score)             # 3. Backpropagation
 
         if not root.children:
             raise RuntimeError("无可落子位置")
@@ -353,10 +353,6 @@ class ABMCTSEngine:
               f"P3={best.wins[3]/best.visits:.3f}")
         print()
         return best.move, elapsed, actual_iters
-
-    # ==========================================================================
-    # Selection & Expansion
-    # ==========================================================================
 
     def _select(self, root: _AB_Node) -> _AB_Node:
         """选择下一个需要模拟的叶节点。
