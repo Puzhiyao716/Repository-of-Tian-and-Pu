@@ -30,7 +30,7 @@ from typing import List, Tuple, Optional, Dict, Set
 
 from FourInFour.GameCore import (
     EMPTY, TOTAL_CELLS,
-    pos_4d_to_index, pos_2d_to_4d, pos_4d_to_2d,
+    pos_4d_to_index, pos_4d_to_2d,
     pos_index_to_4d, check_win_at,
 )
 
@@ -198,15 +198,17 @@ class _AB_Node:
                 board, self.move_idx, last_player, potential_win=True
             )
             if won:
+                # 胜利，返回胜者编号
                 return last_player
 
             # 更新必胜点：移除被上一步占据的（O(1) Set.discard），加入新产生的
             for pid in Key_Points:
                 Key_Points[pid].discard(self.move)
             if new_key_points:
-                for pt in new_key_points:
-                    key_4d = pos_2d_to_4d(pt[0], pt[1])
-                    Key_Points[last_player].add(key_4d)
+                for pt in new_key_points:  # pt 已是四维 (w, x, y, z)
+                    if pt not in Key_Points[last_player % 3 + 1] \
+                    and pt not in Key_Points[(last_player - 2) % 3 + 1]:
+                        Key_Points[last_player].add(pt)
 
         # ---- 步骤2：模拟循环 ----
         while True:
@@ -234,11 +236,10 @@ class _AB_Node:
             if new_key_points:
                 next_p = turn % 3 + 1
                 prev_p = (turn - 2) % 3 + 1
-                for pt in new_key_points:
-                    key_4d = pos_2d_to_4d(pt[0], pt[1])
-                    if key_4d not in Key_Points[next_p] \
-                    and key_4d not in Key_Points[prev_p]:
-                        Key_Points[turn].add(key_4d)
+                for pt in new_key_points:  # pt 已是四维 (w, x, y, z)
+                    if pt not in Key_Points[next_p] \
+                    and pt not in Key_Points[prev_p]:
+                        Key_Points[turn].add(pt)
 
             # 2f. 切换到下一玩家
             turn = turn % 3 + 1
@@ -286,14 +287,14 @@ class ABMCTSEngine:
     def choose_move(
         self, board: List[int], turn: int,
         three_last_moves: Dict[int, int] = None
-    ) -> Tuple[Tuple[int, int], float, int]:
+    ) -> Tuple[Tuple[int, int, int, int], float, int]:
         """
         给定棋盘和当前回合，返回 AI 选择的落子与思考统计。
 
         last_moves: {player_id: 一维索引}，所有玩家最近一步棋。
                     用于 root 节点计算 Key_Point（必胜点优先探索）。
 
-        返回: ((row, col), elapsed_time_seconds, iterations_count)
+        返回: ((w, x, y, z), elapsed_time_seconds, iterations_count)
         """
         # ---- 计算 root 节点的 Key_Point ----
         key_points = self._cal_key_points(board, three_last_moves or {})
@@ -327,9 +328,8 @@ class ABMCTSEngine:
 
         best = max(root.children, key=lambda c: c.visits)
         elapsed = time.perf_counter() - t0
-        # best.move 是四维坐标，转 2D 返回给 UI
+        # ---- 输出最终决策 (best.move 是四维坐标，日志中转为 2D 显示) ----
         best_2d = pos_4d_to_2d(*best.move)
-        # ---- 输出最终决策 ----
         print(f"[INFO TIAN] ====== 搜索完成 ======")
         print(f"[INFO TIAN] 总迭代: {actual_iters}, 耗时: {elapsed:.3f}s")
         print(f"[INFO TIAN] 最佳落子: {best_2d}, "
@@ -340,7 +340,7 @@ class ABMCTSEngine:
         print(f"[INFO TIAN] 子节点共 {len(root.children)} 个, "
               f"root访问次数: {root.visits}")
         print()
-        return best_2d, elapsed, actual_iters
+        return best.move, elapsed, actual_iters
 
     # ==========================================================================
     # Selection & Expansion
@@ -413,11 +413,10 @@ class ABMCTSEngine:
             _won, pot_points = check_win_at(board, idx, pid,
                                             potential_win=True)
             if pot_points:
-                for pt in pot_points:
-                    key_4d = pos_2d_to_4d(pt[0], pt[1])
-                    if key_4d not in seen:
-                        seen.add(key_4d)
-                        result[pid].add(key_4d)
+                for pt in pot_points:  # pt 已是四维 (w, x, y, z)
+                    if pt not in seen:
+                        seen.add(pt)
+                        result[pid].add(pt)
 
         return result
 

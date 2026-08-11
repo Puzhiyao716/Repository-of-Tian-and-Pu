@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple, Dict
 import random
 
-from .board import PLAYER_SYMBOLS, pos_2d_to_4d, pos_4d_to_index
+from .board import PLAYER_SYMBOLS, pos_2d_to_4d, pos_4d_to_index, pos_4d_to_2d
 
 
 # ============================================================================
@@ -153,8 +153,13 @@ class _ComputerPlayerMCTS(Player):
         if last_moves:
             merged.update(last_moves)
         merged.update(self._last_move_index)
-        (row, col), elapsed, iters = self._engine.choose_move(
+        move_data, elapsed, iters = self._engine.choose_move(
             board, self.player_id, merged)
+        # 引擎可能返回四维 (w,x,y,z) 或二维 (row,col)，统一转为二维
+        if len(move_data) == 4:
+            row, col = pos_4d_to_2d(*move_data)
+        else:
+            row, col = move_data
         self._last_thinking_time = elapsed
         self._last_thinking_iters = iters
         return (row, col)

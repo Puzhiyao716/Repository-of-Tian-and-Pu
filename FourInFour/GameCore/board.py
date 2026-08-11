@@ -215,7 +215,7 @@ def check_win_at(
         return False
 
     # ---- 完整路径：检测胜负 + 至多两个必胜点 ----
-    pot_points: List[List[int]] = []
+    pot_points: List[Tuple[int, int, int, int]] = []
 
     for line in lines:
         i0, i1, i2, i3 = line
@@ -237,14 +237,14 @@ def check_win_at(
             if empty_idx == -1:
                 continue          # 被对手阻挡，非必胜点
 
-            # 转 2D 坐标（内联避免函数调用）
+            # 内联展开一维索引 → 四维坐标 (w, x, y, z)
             _w = empty_idx // 64
             _r = empty_idx % 64
             _x = _r // 16
             _r = _r % 16
             _y = _r // 4
             _z = _r % 4
-            pot_points.append([4 * _w + _x, 4 * _y + _z])
+            pot_points.append((_w, _x, _y, _z))
 
             if len(pot_points) >= 4:
                 break
