@@ -218,7 +218,6 @@ class MCTSEngine:
                 if untried and node.if_priority == False:
                     # 无优先落子, 进入expand选择
                     node = self._expand(node, untried)
-                    return node
                     
                 else:
                     # 无优先落子, 进入 UCB1 选择
