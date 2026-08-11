@@ -75,22 +75,23 @@ class _Node:
                 self.winning_moves[p].remove(idx)
         
         # 只检查与上一步落子相关的连线
-        self.winning_moves[player] = []
+        winning_moves = []
         for line in LINES_BY_CELL[idx]:
             count = 0
             empty_idx = None
-            for idx in line:
-                cell = self.board[idx]
+            for _idx in line:
+                cell = self.board[_idx]
                 if cell == player:
                     count += 1
                 elif cell == EMPTY:
-                    empty_idx = idx
+                    empty_idx = _idx
                 else:
                     # 这条线上有对手棋子，不可能形成四连
                     count = -1
                     break
             if count == 3 and empty_idx is not None:
-                self.winning_moves[player].append(empty_idx)
+                winning_moves.append(empty_idx)
+        self.winning_moves[player] = winning_moves
         return False
 
     def get_priority_moves(self):
@@ -116,6 +117,8 @@ class _Node:
                 remaining = len(last_moves) - (1 if self.winning_moves[next_p][0] in last_moves else 0)
                 if remaining < 2:
                     priority_moves.append(self.winning_moves[next_p][0])   # 符合条件，选择此点阻止 next
+                else:
+                    priority_moves.append(self.winning_moves[last_p][0])   # 无法阻止必输情形，直接选择 last 的一个必胜点让 next 赢
             # 所有 next 必胜点都会导致 last 剩余 ≥2，放弃优先级2
 
             # 3. 如果 last player 有至少两个必胜点，随机返回其中一个
@@ -160,7 +163,7 @@ class MCTSEngine:
         self.time_limit = time_limit
         self.max_iters = max_iters
 
-    def engine_move(self, board, turn, last_moves=None):
+    def choose_move(self, board, turn, last_moves=None):
         """
         给定棋盘和当前回合，返回 AI 选择的落子与思考统计。
 
@@ -169,7 +172,7 @@ class MCTSEngine:
         root = _Node(list(board), turn)
         for player in range (1, 4):
             root.winning_moves[player] = self._find_winning_moves(board, player)
-        # print("Winning moves:", root.winning_moves)
+        print("[INFO PU] Winning moves:", root.winning_moves)
 
         t0 = time.time()
         actual_iters = 0
@@ -189,7 +192,7 @@ class MCTSEngine:
         #print("winning moves after search:", best.winning_moves)
         best_move_4d = pos_index_to_4d(best.move)
         elapsed = time.time() - t0
-        print("player", self.player_id, "Best move:", best_move_4d, "Visits:", best.visits, "Wins:", best.wins,
+        print("[INFO PU] player", self.player_id, "Best move:", best_move_4d, "Visits:", best.visits, "Wins:", best.wins,
               "Time:", f"{elapsed:.3f}s", "Iters:", actual_iters)
         return best_move_4d, elapsed, actual_iters
 
@@ -200,7 +203,7 @@ class MCTSEngine:
         从根出发选叶节点。每层由「当前回合玩家」选对自己最有利的子节点，
         体现「每个对手都为自己的胜利而奋斗」。
         """
-        for _ in range(5):
+        for _ in range(4):
             if self._is_terminal(node):
                 return node
 
@@ -218,6 +221,7 @@ class MCTSEngine:
                 if untried and node.if_priority == False:
                     # 无优先落子, 进入expand选择
                     node = self._expand(node, untried)
+                    node.update_winning_moves()
                     
                 else:
                     # 无优先落子, 进入 UCB1 选择
@@ -244,7 +248,7 @@ class MCTSEngine:
 
     @staticmethod
     def _simulate(node):
-        """带必胜判断的模拟至终局，返回胜者编号（0=平局）。"""
+        """模拟至终局，返回胜者编号（0=平局）。"""
 
         # 如果这个节点已经结束
         if node.winner is not None:
