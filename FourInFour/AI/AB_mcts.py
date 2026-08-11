@@ -1,5 +1,5 @@
 """
-智慧型 AI —— 蒙特卡洛树搜索 (MCTS) + UCB1 + Alphabet剪枝树
+Tian型 AI —— 蒙特卡洛树搜索 (MCTS) + UCB1 + Alphabet剪枝树
 ========================================
 
 核心思想：
@@ -34,6 +34,17 @@ from FourInFour.GameCore import (
 
 # UCB1 探索参数（√2 是理论最优值）
 UCB_C = 1.414
+
+
+def _index_to_2d(idx: int) -> Tuple[int, int]:
+    """一维索引 → (row, col)。与 player 模块中同名函数功能一致。"""
+    _w = idx // 64
+    _r = idx % 64
+    _x = _r // 16
+    _r = _r % 16
+    _y = _r // 4
+    _z = _r % 4
+    return (4 * _w + _x, 4 * _y + _z)
 
 
 # ============================================================================
@@ -88,16 +99,18 @@ class _AB_Node:
         assert parent.is_root == True ,\
             "父节点必须是根节点才能扩展新节点"
         
+        # 先计算 Parent_move 的一维索引
+        Parent_move_idx = pos_4d_to_index(*pos_2d_to_4d(*Parent_move))
+
         new_board = list(parent.board)
-        new_board[Parent_move] = parent.turn
+        new_board[Parent_move_idx] = parent.turn
 
         # 深拷贝 Key_Points，移除已被占据的必胜点
-        KeyPoint: Dict[int, Tuple[list[int, int]]] = {}
+        KeyPoint: Dict[int, List[Tuple[int, int]]] = {}
         for pid, pts in parent.Key_Points.items():
             KeyPoint[pid] = [pt for pt in pts if pt != Parent_move]
 
         # 检测新落子是否产生了新的必胜点（对刚落子的玩家）
-        Parent_move_idx = pos_4d_to_index(*pos_2d_to_4d(*Parent_move))
         _won, new_key_point = check_win_at(new_board, Parent_move_idx, parent.turn,
                                      potential_win=True)
         if new_key_point:
@@ -113,7 +126,7 @@ class _AB_Node:
             turn=next_turn,
             move=Parent_move,
             parent=parent,
-            move_idx=Parent_move,
+            move_idx=Parent_move_idx,
             key_points=KeyPoint,
         )
         return child
@@ -156,7 +169,7 @@ class _AB_Node:
         result: List[Tuple[int, int]] = []
         for i, v in enumerate(board):
             if v == EMPTY:
-                result.append(_AB_Node._index_to_2d(i))
+                result.append(_index_to_2d(i))
         return result
 
     def Make_All_Children(self) -> None:
@@ -164,6 +177,7 @@ class _AB_Node:
         candidates = self._search_all_moves(
             self.board, self.turn, self.Key_Points
         )
+        random.shuffle(candidates)
         for move in candidates:
             child = _AB_Node.from_parent(self, move)
             self.children.append(child)
@@ -207,15 +221,18 @@ class _AB_Node:
 
         # ---- 步骤2：模拟循环 ----
         while True:
+            # print(f"[INFO TIAN] 模拟中，当前玩家: {turn}, 已落子: {TOTAL_CELLS - sum(1 for v in board if v == EMPTY)}/256")
             # 2a. 按必胜点规则获取所有候选落子，随机选一个
             candidates = _AB_Node._search_all_moves(board, turn, Key_Points)
             if not candidates:
                 return 0  # 无可落子，平局
             row, col = random.choice(candidates)
+            # print(f"[INFO TIAN] 模拟中，当前玩家: {turn}, 落子: ({row}, {col})")
             move_idx = pos_4d_to_index(*pos_2d_to_4d(row, col))
 
             # 2c. 落子
             board[move_idx] = turn
+            # print(f"[INFO TIAN] 模拟中，当前玩家: {turn}, 落子后棋盘状态更新")
 
             # 2d. 检测胜负与必胜点
             won, new_key_points = check_win_at(
@@ -223,9 +240,10 @@ class _AB_Node:
             )
             if won:
                 return turn
+            # print(f"[INFO TIAN] 模拟中，当前玩家: {turn}, 落子后未获胜，继续模拟")
 
             # 2e. 更新必胜点：移除被占据的，加入新产生的
-            move_2d = _AB_Node._index_to_2d(move_idx)
+            move_2d = _index_to_2d(move_idx)
             for pid in Key_Points:
                 Key_Points[pid] = [
                     pt for pt in Key_Points[pid] if pt != move_2d
@@ -234,24 +252,13 @@ class _AB_Node:
                 for new_key_point in new_key_points:
                     key = (new_key_point[0], new_key_point[1])
                     if key not in Key_Points[turn % 3 + 1] \
-                    and key not in Key_Points[(turn + 1) % 3]:
+                    and key not in Key_Points[(turn - 2) % 3 + 1]:
                         # 如果新增的必胜点不是上下家的必胜点，则加入当前玩家的必胜点列表
                         Key_Points[turn].append(key)
 
             # 2f. 切换到下一玩家
             turn = turn % 3 + 1
    
-    @staticmethod
-    def _index_to_2d(idx: int) -> Tuple[int, int]:
-        """一维索引 → (row, col)。内联避免重复代码。"""
-        _w = idx // 64
-        _r = idx % 64
-        _x = _r // 16
-        _r = _r % 16
-        _y = _r // 4
-        _z = _r % 4
-        return (4 * _w + _x, 4 * _y + _z)
-
     def ucb1(self, player: int) -> float:
         """本节点在指定玩家视角下的 UCB1 值。未访问过 → 无穷大。"""
         if self.visits == 0:
@@ -294,7 +301,7 @@ class ABMCTSEngine:
 
     def choose_move(
         self, board: List[int], turn: int,
-        last_moves: Dict[int, int] = None
+        three_last_moves: Dict[int, int] = None
     ) -> Tuple[Tuple[int, int], float, int]:
         """
         给定棋盘和当前回合，返回 AI 选择的落子与思考统计。
@@ -305,7 +312,14 @@ class ABMCTSEngine:
         返回: ((row, col), elapsed_time_seconds, iterations_count)
         """
         # ---- 计算 root 节点的 Key_Point ----
-        key_points = self._cal_key_points(board, last_moves or {})
+        key_points = self._cal_key_points(board, three_last_moves or {})
+
+        # ---- 输出初始信息 ----
+        total_kp = sum(len(v) for v in key_points.values())
+        print(f"[INFO TIAN] 开始搜索：")
+        print(f"[INFO TIAN] 总共{total_kp}个必胜点")
+        for player, keypoints in key_points.items():
+            print(f"player{player}:{len(keypoints)}")
 
         root = _AB_Node(board, turn, key_points=key_points)
 
@@ -321,14 +335,27 @@ class ABMCTSEngine:
             self._backprop(leaf, winner)             # 3. Backpropagation
             actual_iters += 1
 
+            # 每 100 次迭代输出一次统计
+            if actual_iters % 100 == 0:
+                elapsed = time.time() - t0
+   
+
         if not root.children:
             raise RuntimeError("无可落子位置")
 
         best = max(root.children, key=lambda c: c.visits)
         elapsed = time.time() - t0
-        print("[AB-MCTS] Best move:", best.move,
-              "Visits:", best.visits, "Wins:", best.wins,
-              "Time:", f"{elapsed:.3f}s", "Iters:", actual_iters)
+        # ---- 输出最终决策 ----
+        print(f"[INFO TIAN] ====== 搜索完成 ======")
+        print(f"[INFO TIAN] 总迭代: {actual_iters}, 耗时: {elapsed:.3f}s")
+        print(f"[INFO TIAN] 最佳落子: {best.move}, "
+              f"Visits: {best.visits}, "
+              f"胜率: P1={best.wins[1]/best.visits:.3f} "
+              f"P2={best.wins[2]/best.visits:.3f} "
+              f"P3={best.wins[3]/best.visits:.3f}")
+        print(f"[INFO TIAN] 子节点共 {len(root.children)} 个, "
+              f"root访问次数: {root.visits}")
+        print()
         return best.move, elapsed, actual_iters
 
     # ==========================================================================
@@ -347,6 +374,7 @@ class ABMCTSEngine:
         # 首次调用：展开 root 的所有子节点（利用必胜点剪枝）
         if not root.children:
             root.Make_All_Children()
+            print(f"[INFO TIAN] root 层展开 {len(root.children)} 个子节点")
             if not root.children:
                 raise RuntimeError("无可落子位置")
 
@@ -377,7 +405,7 @@ class ABMCTSEngine:
     # ==========================================================================
 
     def _cal_key_points(
-        self, board: List[int], last_moves: Dict[int, int]
+        self, board: List[int], three_last_moves: Dict[int, int]
     ) -> Dict[int, List[Tuple[int, int]]]:
         """
         root 节点专用：根据各玩家最近落子位置，收集每个玩家自己的必胜点。
@@ -389,12 +417,12 @@ class ABMCTSEngine:
             {player_id: [(row, col), ...]} — 各玩家当前可一步获胜的位置
         """
         result: Dict[int, List[Tuple[int, int]]] = {1: [], 2: [], 3: []}
-        if not last_moves:
+        if not three_last_moves:
             return result
 
         seen: set = set()
 
-        for pid, idx in last_moves.items():
+        for pid, idx in three_last_moves.items():
             # 只检查 pid 自己：idx 上的棋子就是 pid 放的
             _won, pot_points = check_win_at(board, idx, pid,
                                             potential_win=True)

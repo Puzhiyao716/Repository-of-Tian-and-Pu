@@ -176,9 +176,9 @@ class ComputerPlayerNormal(_ComputerPlayerMCTS):
         )
 
 
-class ComputerPlayerSmart(_ComputerPlayerMCTS):
+class NormalTian(_ComputerPlayerMCTS):
     """
-    智慧型电脑 —— MCTS + UCB1 + Alphabet 剪枝。
+    Tian型电脑 —— MCTS + UCB1 + Alphabet 剪枝。
 
     在标准 MCTS 的基础上，通过必胜点分析实现搜索剪枝：
     - 自己有必胜点 → 只探索必胜分支
