@@ -218,10 +218,7 @@ class MCTSEngine:
                 if untried and node.if_priority == False:
                     # 无优先落子, 进入expand选择
                     node = self._expand(node, untried)
-                    if node.update_winning_moves():
-                        # 此为必胜一步，当前玩家获胜
-                        node.winner = node.parent.turn
-                        return node
+                    return node
                     
                 else:
                     # 无优先落子, 进入 UCB1 选择
