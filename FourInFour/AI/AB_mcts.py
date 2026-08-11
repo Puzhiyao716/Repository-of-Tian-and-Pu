@@ -299,7 +299,7 @@ class ABMCTSEngine:
     # 对外接口
     # ==========================================================================
 
-    def choose_move(
+    def engine_move(
         self, board: List[int], turn: int,
         three_last_moves: Dict[int, int] = None
     ) -> Tuple[Tuple[int, int, int, int], float, int]:

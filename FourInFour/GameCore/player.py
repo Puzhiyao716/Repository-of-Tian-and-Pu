@@ -9,7 +9,7 @@
     └── ComputerPlayerNormal   — 电脑·普通型（MCTS + UCB1）
 
 设计原则：
-    - 每种电脑类型是独立类，内部实现各自的 choose_move 逻辑
+    - 每种电脑类型是独立类，内部实现各自的 player_move 逻辑
     - Player 实例只在 start_game 时创建，reset 时销毁
     - 每个玩家记录自己所有落子位置
 """
@@ -83,7 +83,7 @@ class ComputerPlayerRandom(_Player):
     def is_human(self) -> bool:
         return False
 
-    def choose_move(self, board: List[int],
+    def player_move(self, board: List[int],
                     last_moves: dict = None) -> Tuple[int, int]:
         """随机选择一个合法空位。last_moves 参数为接口兼容，本策略不使用。"""
         empty = [i for i, v in enumerate(board) if v == 0]
@@ -146,7 +146,7 @@ class _ComputerPlayer(_Player):
         """子类重写以提供具体的 MCTS 引擎。"""
         raise NotImplementedError
 
-    def choose_move(self, board: List[int],
+    def player_move(self, board: List[int],
                     last_moves: dict = None) -> Tuple[int, int, int, int]:
         """
         使用 MCTS 搜索选择落子。
@@ -161,7 +161,7 @@ class _ComputerPlayer(_Player):
         if last_moves:
             merged.update(last_moves)
         merged.update(self._last_move_index)
-        move_data, elapsed, iters = self._engine.choose_move(
+        move_data, elapsed, iters = self._engine.engine_move(
             board, self.player_id, merged)
         self._last_thinking_time = elapsed
         self._last_thinking_iters = iters

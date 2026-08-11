@@ -160,7 +160,7 @@ class MCTSEngine:
         self.time_limit = time_limit
         self.max_iters = max_iters
 
-    def choose_move(self, board, turn, last_moves=None):
+    def engine_move(self, board, turn, last_moves=None):
         """
         给定棋盘和当前回合，返回 AI 选择的落子与思考统计。
 

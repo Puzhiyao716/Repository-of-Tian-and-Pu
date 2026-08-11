@@ -180,7 +180,7 @@ async def process_computer_turns() -> None:
             break
 
         # 电脑选择落子位置（传入所有玩家最近一步棋的索引）
-        move_data = player.choose_move(game.board, game._last_move_index)
+        move_data = player.player_move(game.board, game._last_move_index)
         # 引擎可能返回四维 (w,x,y,z) 或二维 (row,col)，统一转为二维供 game.make_move
         if len(move_data) == 4:
             row, col = pos_4d_to_2d(*move_data)

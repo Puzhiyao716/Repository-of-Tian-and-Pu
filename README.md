@@ -64,9 +64,9 @@ main.py  _launch_computer_turns()
     ↓ asyncio.create_task()
 main.py  process_computer_turns()
     ↓  while not game_over and is_computer_turn():
-player.py ComputerPlayerNormal.choose_move(board)
+player.py ComputerPlayerNormal.player_move(board)
     ↓  惰性初始化 MCTSEngine(time_limit, max_iters)
-mcts.py  MCTSEngine.choose_move(board, turn)
+mcts.py  MCTSEngine.engine_move(board, turn)
 ```
 
 **终止条件**（满足任一即停止迭代）：
@@ -139,9 +139,9 @@ return best.move, elapsed_time, actual_iters
 返回的 `(row, col)` 经以下链路最终在前端日志显示：
 
 ```
-MCTSEngine.choose_move → (move, elapsed, iters)
+MCTSEngine.engine_move → (move, elapsed, iters)
     ↓
-ComputerPlayerNormal.choose_move → 存储到 _last_thinking_*
+ComputerPlayerNormal.player_move → 存储到 _last_thinking_*
     ↓ thinking_stats property
 main.py process_computer_turns → thinking_stats → make_move(thinking_time, thinking_iters)
     ↓
@@ -178,7 +178,7 @@ MCTSEngine                         ← 搜索引擎
 ├── player_id: int                 ← AI 自己的玩家编号
 ├── time_limit: float              ← 时间上限（秒）
 ├── max_iters: int                 ← 迭代次数上限
-├── choose_move(board, turn)       ← 入口
+├── engine_move(board, turn)       ← 入口
 ├── _select(node)                  ← Selection + Expansion
 ├── _expand(node, untried)         ← 随机扩展
 ├── _expand_specific(node, idx)    ← 指定必胜落子扩展
