@@ -178,7 +178,6 @@ class _AB_Node:
 
         return False
         
-
     def _simulate(self) -> int:
         """从当前节点出发进行随机模拟至终局，遵循必胜点优先落子规则。
 
@@ -265,10 +264,11 @@ class _AB_Node:
             return list(up_keypoint)
 
         # 规则 4：所有空位，使用预计算映射表转为四维坐标
-        result: List[Tuple[int, int, int, int]] = []
-        for i, v in enumerate(board):
-            if v == EMPTY:
-                result.append(_INDEX_TO_4D[i])
+        result = [(_INDEX_TO_4D[i]) for i,v in enumerate(board) if v == EMPTY]
+        # result: List[Tuple[int, int, int, int]] = []
+        # for i, v in enumerate(board):
+        #     if v == EMPTY:
+        #         result.append(_INDEX_TO_4D[i])
         return result
 
 
@@ -316,7 +316,7 @@ class ABMCTSEngine:
 
         # ---- 输出初始信息 ----
         total_kp = sum(len(v) for v in key_points.values())
-        print(f"[INFO TIAN] 开始搜索：")
+        print(f"[INFO TIAN] player{self.player_id}开始搜索：")
         print(f"[INFO TIAN] 总共{total_kp}个必胜点")
         for player, keypoints in key_points.items():
             print(f"player{player}:{len(keypoints)}")
