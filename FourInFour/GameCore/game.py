@@ -52,7 +52,11 @@ class GameRoom:
         self.players: Dict[int, _Player] = {}          # 游戏中活跃玩家
         self._reservations: Dict[int, object] = {}    # 座位预约
         self.started: bool = False
+        self.paused: bool = False                       # 暂停状态
         self._last_move_index: Dict[int, int] = {}
+        # 落子历史栈，每项为 {player_id, index, row, col}
+        # 用于悔棋功能
+        self._move_history: List[dict] = []
 
     # ------------------------------------------------------------------
     # 玩家管理（预约制：坐下/机器人 → 预约；start_game → 创建 Player）
@@ -146,6 +150,9 @@ class GameRoom:
                     self.players[slot] = ComputerPlayerRandom(slot)
 
         self.started = True
+        self.paused = False
+        self._move_history.clear()
+        self._last_move_index.clear()
         return {"success": True, "message": "游戏开始！"}
 
     # ------------------------------------------------------------------
@@ -178,6 +185,9 @@ class GameRoom:
         if self.game_over:
             return self._error("游戏已结束，请等待新一局", self.winner)
 
+        if self.paused:
+            return self._error("游戏已暂停，请先继续")
+
         if not self.started:
             return self._error("游戏尚未开始")
 
@@ -207,6 +217,13 @@ class GameRoom:
         player = self.players.get(player_id)
         if player is not None:
             player.record_move(row, col)
+        # 记录落子历史（供悔棋使用）
+        self._move_history.append({
+            "player_id": player_id,
+            "index": index,
+            "row": row,
+            "col": col,
+        })
         return (w, x, y, z, index)
 
     def _finish_turn(
@@ -296,6 +313,75 @@ class GameRoom:
         return result
 
     # ------------------------------------------------------------------
+    # 悔棋
+    # ------------------------------------------------------------------
+
+    def undo(self) -> dict:
+        """
+        撤销上一步棋，返回操作结果。
+
+        仅当存在落子历史且游戏进行中时才可悔棋。
+        撤销后：
+        - 棋盘状态恢复到上一步之前
+        - 回合切换回被撤销的玩家
+        - 玩家的落子记录同步回退
+        - 若游戏已结束则重置结束状态
+
+        返回: {success, message, undone_player, undone_row, undone_col}
+        """
+        if not self._move_history:
+            return {"success": False, "message": "没有可以悔棋的步骤"}
+
+        if not self.started:
+            return {"success": False, "message": "游戏尚未开始"}
+
+        # 弹出最后一步
+        last = self._move_history.pop()
+        pid = last["player_id"]
+        idx = last["index"]
+        row = last["row"]
+        col = last["col"]
+
+        # 恢复棋盘
+        self.board[idx] = EMPTY
+        self.move_count -= 1
+
+        # 恢复回合
+        self.current_turn = pid
+
+        # 清除游戏结束状态（如果已结束）
+        if self.game_over:
+            self.game_over = False
+            self.winner = EMPTY
+            self.winning_line = []
+
+        # 恢复玩家的落子记录
+        player = self.players.get(pid)
+        if player is not None and player.moves:
+            player.moves.pop()
+
+        # 重建 _last_move_index：从剩余历史中找到每个玩家的最后一步
+        self._last_move_index.clear()
+        for entry in self._move_history:
+            self._last_move_index[entry["player_id"]] = entry["index"]
+
+        # 同步所有电脑玩家的内部 last_move_index（悔棋可能使它们过时）
+        from .player import _ComputerPlayer
+        for pl in self.players.values():
+            if isinstance(pl, _ComputerPlayer):
+                for pid in (1, 2, 3):
+                    new_idx = self._last_move_index.get(pid)
+                    pl.sync_last_move_index(pid, new_idx)
+
+        return {
+            "success": True,
+            "message": f"已悔棋，撤销玩家 {pid} 的落子",
+            "undone_player": pid,
+            "undone_row": row,
+            "undone_col": col,
+        }
+
+    # ------------------------------------------------------------------
     # 状态快照
     # ------------------------------------------------------------------
 
@@ -348,6 +434,7 @@ class GameRoom:
             "move_count": self.move_count,
             "game_over": self.game_over,
             "winner": self.winner,
+            "paused": self.paused,
             "started": self.started,
             "player_count": player_count,
             "player_types": player_types,
@@ -375,8 +462,10 @@ class GameRoom:
         self.winner = EMPTY
         self.winning_line = []
         self.started = False
+        self.paused = False
         self.players.clear()          # 销毁 Player 实例
         self._last_move_index = {}
+        self._move_history.clear()
         return self.get_state()
 
 

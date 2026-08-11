@@ -135,6 +135,13 @@ class _ComputerPlayer(_Player):
         super().clear_moves()
         self._last_move_index.clear()
 
+    def sync_last_move_index(self, player_id: int, index) -> None:
+        """同步指定玩家的最近一步棋索引（供悔棋后使用）。"""
+        if index is None:
+            self._last_move_index.pop(player_id, None)
+        else:
+            self._last_move_index[player_id] = index
+
     def _get_engine(self):
         """子类重写以提供具体的 MCTS 引擎。"""
         raise NotImplementedError

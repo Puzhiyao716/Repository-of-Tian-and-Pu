@@ -5,7 +5,7 @@
 const SYM = { 1: "○", 2: "✕", 3: "△" };
 const COL = { 1: "player-1", 2: "player-2", 3: "player-3" };
 
-let mySlot = null, gameOver = false, started = false;
+let mySlot = null, gameOver = false, started = false, paused = false;
 let currentTurn = 1, boardState = [], lastMoves = {};
 let playerCount = 0, playerTypes = {}, playerStrategies = {};
 let playerTimeLimits = {}, playerMaxIters = {};
@@ -16,6 +16,8 @@ const bg = document.getElementById("boardGrid");
 const ti = document.getElementById("turnIndicator");
 const le = document.getElementById("logEntries");
 const bs = document.getElementById("btnStartGame");
+const bp = document.getElementById("btnPause");
+const bu = document.getElementById("btnUndo");
 const slotRows = {};
 for (let i = 1; i <= 3; i++) slotRows[i] = document.getElementById("slot" + i);
 
@@ -63,7 +65,7 @@ function renderBoard() {
     }
     // 回合提示：棋盘周围发光
     const wrapper = document.querySelector(".board-wrapper");
-    if (!gameOver && started && mySlot !== null && mySlot === currentTurn) {
+    if (!gameOver && started && !paused && mySlot !== null && mySlot === currentTurn) {
         wrapper.classList.add("my-turn");
     } else {
         wrapper.classList.remove("my-turn");
@@ -74,6 +76,10 @@ function renderBoard() {
 function updateTurnUI() {
     if (!started) { ti.innerHTML = "等待玩家就绪…"; return; }
     if (gameOver) return;
+    if (paused) {
+        ti.innerHTML = `⏸ <b>游戏已暂停</b> — 当前回合：<span class="symbol">${SYM[currentTurn]||"—"}</span> 玩家 ${currentTurn}`;
+        return;
+    }
     ti.innerHTML = `当前回合：<span class="symbol">${SYM[currentTurn]||"—"}</span> 玩家 ${currentTurn}`;
 }
 function handleGameOver(winner) {
@@ -117,6 +123,19 @@ function updateSlots() {
 
 function updateUI() {
     bs.style.display = (playerCount >= 3 && !started) ? "block" : "none";
+    // 暂停/继续按钮：游戏开始后且未结束时可见
+    bp.style.display = (started && !gameOver) ? "inline-block" : "none";
+    if (paused) {
+        bp.textContent = "▶ 继续";
+        bp.classList.add("paused");
+    } else {
+        bp.textContent = "⏯ 暂停";
+        bp.classList.remove("paused");
+    }
+    // 悔棋按钮：仅在可悔棋时启用
+    // 可悔棋条件：已开始、未结束、且(暂停中 或 当前是人类玩家的回合)
+    let canUndo = started && !gameOver && (paused || !(playerTypes[currentTurn] === "computer"));
+    bu.disabled = !canUndo;
     updateSlots(); updateTurnUI();
 }
 
@@ -149,6 +168,7 @@ function handleMsg(msg) {
         boardState = msg.board || [];
         currentTurn = msg.current_turn;
         gameOver = msg.game_over;
+        paused = msg.paused || false;
         lastMoves = msg.last_moves || {};
         playerCount = msg.player_count || 0;
         started = msg.started || false;
@@ -182,6 +202,7 @@ function handleMsg(msg) {
 // ---- 交互 ----
 function onCellClick(r, c) {
     if (!started) { addLog("游戏尚未开始"); return; }
+    if (paused) { addLog("游戏已暂停，请先继续"); return; }
     if (gameOver) { addLog("游戏已结束"); return; }
     if (mySlot === null) { addLog("请先坐下再落子"); return; }
     if (mySlot !== currentTurn) { addLog("不是你的回合"); return; }
@@ -190,6 +211,11 @@ function onCellClick(r, c) {
 }
 
 bs.addEventListener("click", () => send({ type: "start_game" }));
+bp.addEventListener("click", () => {
+    if (paused) { send({ type: "resume" }); }
+    else { send({ type: "pause" }); }
+});
+bu.addEventListener("click", () => send({ type: "undo" }));
 document.getElementById("btnReset").addEventListener("click", () => send({ type: "reset" }));
 
 // ---- 启动 ----

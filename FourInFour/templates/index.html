@@ -93,6 +93,12 @@ h1 { font-size: 28px; margin-bottom: 6px; letter-spacing: 4px; color: #e94560; }
 .btn-reset { background: #e94560; color: white; } .btn-reset:hover { background: #c73650; }
 .btn-start { background: #4ecca3; color: #1a1a2e; margin-top: 12px; width: 100%; } .btn-start:hover { background: #3db890; }
 
+/* 暂停 / 继续 & 悔棋按钮 */
+.btn-pause { background: #f5c518; color: #1a1a2e; } .btn-pause:hover { background: #d4a810; }
+.btn-pause.paused { background: #4ecca3; color: #1a1a2e; } .btn-pause.paused:hover { background: #3db890; }
+.btn-undo { background: #0f3460; color: #4ecca3; border: 1px solid #4ecca3; } .btn-undo:hover { background: #1a4a7a; }
+.btn-undo:disabled { background: #1a1a2e; color: #555; border-color: #333; cursor: not-allowed; }
+
 /* 按钮组（策略选择器 + 操作按钮同行排列） */
 .btn-group { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
 .sel-strategy { padding: 8px 10px; border-radius: 6px; background: #0f3460; color: #ccc; border: 1px solid #4ecca3; font-size: 13px; }
@@ -191,11 +197,13 @@ h1 { font-size: 28px; margin-bottom: 6px; letter-spacing: 4px; color: #e94560; }
 
 </div>
 
-<!-- ====== 底部状态栏：回合指示 + 重置按钮 ====== -->
+<!-- ====== 底部状态栏：回合指示 + 控制按钮 ====== -->
 <div class="status-bar">
   <div class="turn-indicator" id="turnIndicator">
     当前回合：<span class="symbol">—</span>
   </div>
+  <button class="btn btn-pause" id="btnPause">⏯ 暂停</button>
+  <button class="btn btn-undo" id="btnUndo">↩ 悔棋</button>
   <button class="btn btn-reset" id="btnReset">🔄 重新开始</button>
 </div>
 

@@ -161,9 +161,19 @@ async def process_computer_turns() -> None:
 
     支持连续执行（例如玩家2和玩家3都是电脑时，连续自动落子）。
     每个电脑落子之间有固定延迟，以便人类观看。
+    暂停期间不执行任何操作。
     """
     while not game.game_over and game.is_computer_turn():
+        # 暂停期间等待，不执行落子
+        if game.paused:
+            await asyncio.sleep(0.2)
+            continue
+
         await asyncio.sleep(COMPUTER_MOVE_DELAY)
+
+        # 再次检查暂停状态（睡眠期间可能被暂停）
+        if game.paused:
+            continue
 
         player = game.get_player(game.current_turn)
         if player is None:
@@ -287,6 +297,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif msg_type == "move":
                 await _handle_move(websocket, data, my_slot)
+            elif msg_type == "pause":
+                await _handle_pause()
+            elif msg_type == "resume":
+                await _handle_resume()
+            elif msg_type == "undo":
+                await _handle_undo(websocket, my_slot)
             elif msg_type == "start_game":
                 await _handle_start_game()
             elif msg_type == "reset":
@@ -348,6 +364,114 @@ async def _handle_reset() -> None:
     new_state = game.reset()
     await manager.broadcast({"type": "state", **new_state})
     await manager.broadcast({"type": "chat", "message": "游戏已重置，新一局开始！"})
+
+
+async def _handle_pause() -> None:
+    """
+    暂停游戏。
+
+    - 若当前是电脑思考时间，取消电脑 task（不落子）
+    - 设置 paused 状态，广播更新
+    """
+    if not game.started:
+        await manager.broadcast({"type": "chat", "message": "游戏尚未开始"})
+        return
+    if game.game_over:
+        await manager.broadcast({"type": "chat", "message": "游戏已结束"})
+        return
+    if game.paused:
+        await manager.broadcast({"type": "chat", "message": "游戏已经在暂停中"})
+        return
+
+    # 如果正在电脑思考，取消电脑 task
+    global _computer_task
+    if _computer_task and not _computer_task.done():
+        _computer_task.cancel()
+        _computer_task = None
+
+    game.paused = True
+    await manager.broadcast({"type": "state", **game.get_state()})
+    await manager.broadcast({"type": "chat", "message": "⏸ 游戏已暂停"})
+
+
+async def _handle_resume() -> None:
+    """
+    继续游戏。
+
+    - 清除 paused 状态
+    - 若当前回合是电脑，重新启动电脑思考
+    """
+    if not game.started:
+        await manager.broadcast({"type": "chat", "message": "游戏尚未开始"})
+        return
+    if game.game_over:
+        await manager.broadcast({"type": "chat", "message": "游戏已结束"})
+        return
+    if not game.paused:
+        await manager.broadcast({"type": "chat", "message": "游戏未暂停"})
+        return
+
+    game.paused = False
+    await manager.broadcast({"type": "state", **game.get_state()})
+    await manager.broadcast({"type": "chat", "message": "▶ 游戏继续"})
+
+    # 若当前回合是电脑，启动思考
+    if game.is_computer_turn():
+        _launch_computer_turns()
+
+
+async def _handle_undo(websocket: WebSocket, slot: Optional[int]) -> None:
+    """
+    悔棋：撤销上一步棋。
+
+    限制：
+    - 仅在玩家思考时间（人类玩家的回合）或暂停时可用
+    - 电脑思考时不可悔棋
+    - 悔棋后若轮到电脑，自动进入暂停模式
+    """
+    if not game.started:
+        await manager.send_to(websocket, {"type": "error", "message": "游戏尚未开始"})
+        return
+    if game.game_over:
+        await manager.send_to(websocket, {"type": "error", "message": "游戏已结束"})
+        return
+
+    # 检查是否处于可悔棋状态：
+    # 允许：暂停中、或当前是人类玩家的回合
+    # 不允许：电脑正在思考（即非暂停且当前是电脑回合）
+    can_undo = game.paused or not game.is_computer_turn()
+    if not can_undo:
+        await manager.send_to(websocket, {
+            "type": "error",
+            "message": "电脑思考中，请先暂停再悔棋"
+        })
+        return
+
+    # 执行悔棋
+    result = game.undo()
+    if not result["success"]:
+        await manager.send_to(websocket, {"type": "error", "message": result["message"]})
+        return
+
+    await manager.broadcast({"type": "state", **game.get_state()})
+    await manager.broadcast({
+        "type": "chat",
+        "message": f"↩ 悔棋：撤销玩家 {result['undone_player']} 的落子 "
+                   f"[{result['undone_row']+1},{result['undone_col']+1}]"
+    })
+
+    # 悔棋后，若当前回合是电脑，自动进入暂停模式
+    if game.is_computer_turn():
+        global _computer_task
+        if _computer_task and not _computer_task.done():
+            _computer_task.cancel()
+            _computer_task = None
+        game.paused = True
+        await manager.broadcast({"type": "state", **game.get_state()})
+        await manager.broadcast({
+            "type": "chat",
+            "message": "⏸ 悔棋后轮到电脑，自动暂停。按继续键开始电脑思考"
+        })
 
 
 # ============================================================================
