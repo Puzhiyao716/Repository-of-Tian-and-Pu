@@ -256,7 +256,7 @@ class _AB_Node:
             return list(own_keypoint)
 
         # 规则 2：下家恰好一个必胜点，且上家无
-        if len(down_keypoint) == 1 and len(up_keypoint) == 0:
+        if len(down_keypoint) == 1 and len(up_keypoint) <= 1:
             return list(down_keypoint)
 
         # 规则 3：自己和下家无，上家 2+
@@ -351,8 +351,6 @@ class ABMCTSEngine:
               f"胜率: P1={best.wins[1]/best.visits:.3f} "
               f"P2={best.wins[2]/best.visits:.3f} "
               f"P3={best.wins[3]/best.visits:.3f}")
-        print(f"[INFO TIAN] 子节点共 {len(root.children)} 个, "
-              f"root访问次数: {root.visits}")
         print()
         return best.move, elapsed, actual_iters
 
