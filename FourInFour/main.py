@@ -432,9 +432,6 @@ async def _handle_undo(websocket: WebSocket, slot: Optional[int]) -> None:
     if not game.started:
         await manager.send_to(websocket, {"type": "error", "message": "游戏尚未开始"})
         return
-    if game.game_over:
-        await manager.send_to(websocket, {"type": "error", "message": "游戏已结束"})
-        return
 
     # 检查是否处于可悔棋状态：
     # 允许：暂停中、或当前是人类玩家的回合

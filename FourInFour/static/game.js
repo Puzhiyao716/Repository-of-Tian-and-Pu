@@ -133,8 +133,8 @@ function updateUI() {
         bp.classList.remove("paused");
     }
     // 悔棋按钮：仅在可悔棋时启用
-    // 可悔棋条件：已开始、未结束、且(暂停中 或 当前是人类玩家的回合)
-    let canUndo = started && !gameOver && (paused || !(playerTypes[currentTurn] === "computer"));
+    // 可悔棋条件：已开始、且(已结束 或 暂停中 或 当前是人类玩家的回合)
+    let canUndo = started && (gameOver || paused || !(playerTypes[currentTurn] === "computer"));
     bu.disabled = !canUndo;
     updateSlots(); updateTurnUI();
 }
