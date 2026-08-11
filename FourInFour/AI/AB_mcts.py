@@ -317,9 +317,8 @@ class ABMCTSEngine:
         # ---- 输出初始信息 ----
         total_kp = sum(len(v) for v in key_points.values())
         print(f"[INFO TIAN] player{self.player_id}开始搜索：")
-        print(f"[INFO TIAN] 总共{total_kp}个必胜点")
-        for player, keypoints in key_points.items():
-            print(f"player{player}:{len(keypoints)}")
+        print(f"[INFO TIAN] 总共{total_kp}个必胜点", \
+              *(f"player{p}:{len(kp)}" for p, kp in key_points.items()))
 
         root = _AB_Node(board, turn, key_points=key_points)
 
