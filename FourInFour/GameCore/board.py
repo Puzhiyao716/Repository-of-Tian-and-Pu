@@ -246,7 +246,7 @@ def check_win_at(
             _z = _r % 4
             pot_points.append([4 * _w + _x, 4 * _y + _z])
 
-            if len(pot_points) >= 2:
+            if len(pot_points) >= 4:
                 break
 
     return False, pot_points
