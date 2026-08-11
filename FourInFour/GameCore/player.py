@@ -97,19 +97,13 @@ class ComputerPlayerRandom(Player):
 # ComputerPlayerNormal（普通型 / MCTS）
 # ============================================================================
 
-class ComputerPlayerNormal(Player):
-    """
-    普通型电脑 —— 蒙特卡洛树搜索 + UCB1。
-
-    以自己赢为第一目的，假设所有对手也各自为赢而奋斗。
-    MCTS 引擎惰性初始化。
-    追踪所有玩家最近一步棋，供 MCTS 计算必胜点。
-    """
+class _ComputerPlayerMCTS(Player):
+    """电脑玩家基类 —— MCTS 引擎公共逻辑（惰性初始化、统计、落子追踪）。"""
 
     def __init__(self, player_id: int,
                  time_limit: float = 5.0, max_iters: int = 10000) -> None:
         super().__init__(player_id)
-        self._mcts_engine = None  # 惰性初始化
+        self._engine = None  # 惰性初始化
         self._time_limit = time_limit
         self._max_iters = max_iters
         self._last_thinking_time: float = 0.0
@@ -141,31 +135,63 @@ class ComputerPlayerNormal(Player):
         super().clear_moves()
         self._last_move_index.clear()
 
+    def _get_engine(self):
+        """子类重写以提供具体的 MCTS 引擎。"""
+        raise NotImplementedError
+
     def choose_move(self, board: List[int],
                     last_moves: dict = None) -> Tuple[int, int]:
         """
         使用 MCTS 搜索选择落子。
 
         last_moves: {player_id: 一维索引}，所有玩家最近一步棋。
-                    供 MCTS 在 root 节点计算必胜点。
         """
-        if self._mcts_engine is None:
-            from FourInFour.AI.mcts import MCTSEngine
-            self._mcts_engine = MCTSEngine(
-                player_id=self.player_id,
-                time_limit=self._time_limit,
-                max_iters=self._max_iters,
-            )
+        if self._engine is None:
+            self._engine = self._get_engine()
         # 合并内部追踪的 last_moves 与外部传入的 last_moves
         merged = {}
         if last_moves:
             merged.update(last_moves)
         merged.update(self._last_move_index)
-        (row, col), elapsed, iters = self._mcts_engine.choose_move(
+        (row, col), elapsed, iters = self._engine.choose_move(
             board, self.player_id, merged)
         self._last_thinking_time = elapsed
         self._last_thinking_iters = iters
         return (row, col)
+
+
+class ComputerPlayerNormal(_ComputerPlayerMCTS):
+    """
+    普通型电脑 —— 蒙特卡洛树搜索 + UCB1。
+
+    以自己赢为第一目的，假设所有对手也各自为赢而奋斗。
+    """
+
+    def _get_engine(self):
+        from FourInFour.AI.mcts import MCTSEngine
+        return MCTSEngine(
+            player_id=self.player_id,
+            time_limit=self._time_limit,
+            max_iters=self._max_iters,
+        )
+
+
+class ComputerPlayerSmart(_ComputerPlayerMCTS):
+    """
+    智慧型电脑 —— MCTS + UCB1 + Alphabet 剪枝。
+
+    在标准 MCTS 的基础上，通过必胜点分析实现搜索剪枝：
+    - 自己有必胜点 → 只探索必胜分支
+    - 对手有必胜点 → 优先堵截
+    """
+
+    def _get_engine(self):
+        from FourInFour.AI.AB_mcts import ABMCTSEngine
+        return ABMCTSEngine(
+            player_id=self.player_id,
+            time_limit=self._time_limit,
+            max_iters=self._max_iters,
+        )
 
 
 # ============================================================================

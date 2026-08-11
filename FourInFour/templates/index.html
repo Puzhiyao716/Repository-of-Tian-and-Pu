@@ -162,12 +162,13 @@ h1 { font-size: 28px; margin-bottom: 6px; letter-spacing: 4px; color: #e94560; }
     <!-- 机器人策略选择器（下拉框） -->
     <div class="btn-group" style="margin-top:12px">
       <select id="selStrategy" class="sel-strategy">
-        <option value="普通型">普通型</option>        
+        <option value="智慧型">智慧型 (AB-MCTS)</option>
+        <option value="普通型">普通型 (MCTS)</option>        
         <option value="random">随机型</option>
       </select>
     </div>
 
-    <!-- 普通型 AI 参数（timelimit / maxiters） -->
+    <!-- AI 参数（timelimit / maxiters，普通型/智慧型可用） -->
     <div class="ai-params" id="aiParams" style="margin-top:12px;">
       <div class="param-row">
         <label for="inpTimeLimit">⏱ 时间限制</label>

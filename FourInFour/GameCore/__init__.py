@@ -13,7 +13,7 @@ from .board import (
     pos_4d_to_index, pos_index_to_4d,
     check_win_at, get_winning_line, WINNING_LINES, LINES_BY_CELL,
 )
-from .player import Player, HumanPlayer, ComputerPlayerRandom, ComputerPlayerNormal
+from .player import Player, HumanPlayer, ComputerPlayerRandom, ComputerPlayerNormal, ComputerPlayerSmart
 from .game import GameRoom
 
 __all__ = [
@@ -27,7 +27,7 @@ __all__ = [
     # 胜负检测
     "check_win_at", "get_winning_line", "WINNING_LINES", "LINES_BY_CELL",
     # 玩家
-    "Player", "HumanPlayer", "ComputerPlayerRandom", "ComputerPlayerNormal",
+    "Player", "HumanPlayer", "ComputerPlayerRandom", "ComputerPlayerNormal", "ComputerPlayerSmart",
     # 游戏房间
     "GameRoom",
 ]

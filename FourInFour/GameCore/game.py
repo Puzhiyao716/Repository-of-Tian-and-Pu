@@ -22,7 +22,7 @@ from .board import (
     pos_2d_to_4d, pos_4d_to_index, pos_index_to_4d,
     check_win_at, get_winning_line,
 )
-from .player import Player, HumanPlayer, ComputerPlayerRandom, ComputerPlayerNormal
+from .player import Player, HumanPlayer, ComputerPlayerRandom, ComputerPlayerNormal, ComputerPlayerSmart
 
 
 class GameRoom:
@@ -138,7 +138,9 @@ class GameRoom:
                 _, strategy, *rest = reservation
                 tl = rest[0] if len(rest) > 0 else 5.0
                 mi = rest[1] if len(rest) > 1 else 10000
-                if strategy == "普通型":
+                if strategy == "智慧型":
+                    self.players[slot] = ComputerPlayerSmart(slot, time_limit=tl, max_iters=mi)
+                elif strategy == "普通型":
                     self.players[slot] = ComputerPlayerNormal(slot, time_limit=tl, max_iters=mi)
                 else:
                     self.players[slot] = ComputerPlayerRandom(slot)
@@ -380,9 +382,11 @@ class GameRoom:
 
 def _class_to_strategy(player: Player) -> str:
     """从 Player 子类推导策略名。"""
-    from .player import ComputerPlayerRandom, ComputerPlayerNormal
-    if isinstance(player, ComputerPlayerRandom):
-        return "随机型"
+    from .player import ComputerPlayerRandom, ComputerPlayerNormal, ComputerPlayerSmart
+    if isinstance(player, ComputerPlayerSmart):
+        return "智慧型"
     if isinstance(player, ComputerPlayerNormal):
         return "普通型"
+    if isinstance(player, ComputerPlayerRandom):
+        return "随机型"
     return ""
