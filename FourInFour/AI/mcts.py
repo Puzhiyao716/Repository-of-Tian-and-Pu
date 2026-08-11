@@ -163,7 +163,7 @@ class MCTSEngine:
         self.time_limit = time_limit
         self.max_iters = max_iters
 
-    def choose_move(self, board, turn, last_moves=None):
+    def engine_move(self, board, turn, last_moves=None):
         """
         给定棋盘和当前回合，返回 AI 选择的落子与思考统计。
 
@@ -203,7 +203,7 @@ class MCTSEngine:
         从根出发选叶节点。每层由「当前回合玩家」选对自己最有利的子节点，
         体现「每个对手都为自己的胜利而奋斗」。
         """
-        for _ in range(4):
+        for _ in range(7):
             if self._is_terminal(node):
                 return node
 
