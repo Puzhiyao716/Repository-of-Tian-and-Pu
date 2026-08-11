@@ -35,30 +35,19 @@ UCB_C = 1.414
 class _Node:
     """MCTS 搜索树节点。"""
 
-    __slots__ = ("board", "turn", "move", "move_idx", "parent", "children",
-                 "visits", "wins", "_untried", "winner", "key_points")
+    __slots__ = ("board", "turn", "move", "parent", "children", "visits", "wins", "_untried", "winner", "winning_moves")
 
-    def __init__(
-        self,
-        board: List[int],
-        turn: int,
-        move: Optional[Tuple[int, int]] = None,
-        parent: Optional["_Node"] = None,
-        move_idx: int = -1,
-        key_points: Optional[List[Tuple[int, int]]] = None,
-    ) -> None:
-        self.board: List[int] = board            # 棋盘快照（256 长度列表）
-        self.turn: int = turn                    # 当前回合玩家编号（1/2/3）
-        self.move: Optional[Tuple[int, int]] = move  # 到达此节点的落子 (row, col)
-        self.move_idx: int = move_idx            # 到达此节点的落子一维索引（root 为 -1）
-        self.parent: Optional["_Node"] = parent  # 父节点（根节点为 None）
-        self.children: List["_Node"] = []        # 已扩展的子节点列表
-        self.visits: int = 0                     # 被访问次数（用于 UCB1 计算）
-        self.wins: Dict[int, int] = {1: 0, 2: 0, 3: 0}  # 以各玩家视角的获胜次数
-        self._untried: Optional[List[Tuple[int, int]]] = None  # 尚未尝试的落子（惰性初始化）
-        self.winner: Optional[int] = None        # 必胜/必败标记（0=平局, None=未确定）
-        self.key_points: List[Tuple[int, int]] = key_points or []  # root 节点优先探索的必胜点
-
+    def __init__(self, board, turn, move=None, parent=None):
+        self.board = board               # 棋盘状态（256 长度列表）
+        self.turn = turn                 # 当前回合玩家
+        self.move = move                 # 到达此节点的落子 (row, col)
+        self.parent = parent
+        self.children = []
+        self.visits = 0
+        self.wins = {1: 0, 2: 0, 3: 0}
+        self._untried = None
+        self.winner = None
+        self.winning_moves = [[], [], [], []]  # 每个玩家的必胜一步列表
 
     def get_untried_moves(self) -> List[Tuple[int, int]]:
         """返回当前棋盘上所有空位。root 节点的 Key_Point 优先，其余打乱。"""
@@ -83,7 +72,71 @@ class _Node:
                 self._untried = all_moves
         return self._untried
 
-    def ucb1(self, player: int) -> float:
+    def update_winning_moves(self):
+        """更新前一步导致的的必胜一步列表变化。 若直接赢则返回 True，否则返回 False。"""
+        from FourInFour.GameCore.board import LINES_BY_CELL
+        player = (self.turn + 1) % 3 + 1  # 上一回合玩家
+        w, x, y, z = pos_2d_to_4d(self.move[0], self.move[1])
+        idx = pos_4d_to_index(w, x, y, z)
+
+        # 删除必胜列表中的上一步落子
+        if idx in self.winning_moves[player]:
+            return True
+        for p in range(1, 4):
+            if idx in self.winning_moves[p]:
+                self.winning_moves[p].remove(idx)
+        
+        # 只检查与上一步落子相关的连线
+        self.winning_moves[player] = []
+        for line in LINES_BY_CELL[idx]:
+            count = 0
+            empty_idx = None
+            for idx in line:
+                cell = self.board[idx]
+                if cell == player:
+                    count += 1
+                elif cell == EMPTY:
+                    empty_idx = idx
+                else:
+                    # 这条线上有对手棋子，不可能形成四连
+                    count = -1
+                    break
+            if count == 3 and empty_idx is not None:
+                self.winning_moves[player].append(empty_idx)
+        return False
+
+    def get_priority_move(self):
+        """
+        按优先级返回一个落子索引（优先级1→2→3），若无可选则返回 None。
+        依赖 self.turn（当前玩家）、self.winning_moves（列表，每个玩家对应一个列表）
+        """
+        current = self.turn
+        next_p = (current % 3) + 1
+        last_p = (current + 1) % 3 + 1 
+
+        # 1. 当前玩家有必胜点
+        if self.winning_moves[current]:
+            return self.winning_moves[current][0]
+
+        # 2. 下一个玩家有必胜点
+        if self.winning_moves[next_p]:
+            last_moves = self.winning_moves[last_p]
+            # 尝试选择一个 next 必胜点，该点最好能破坏 last 的必胜点，至少使得走完后 last 的必胜点数量 < 2
+            # 走 move 后 last 剩余的必胜点数量 = 原数量 - (move 是否在 last_moves 中)
+            remaining = len(last_moves) - (1 if self.winning_moves[next_p][0] in last_moves else 0)
+            if remaining < 2:
+                return self.winning_moves[next_p][0]   # 符合条件，选择此点阻止 next
+        # 所有 next 必胜点都会导致 last 剩余 ≥2，放弃优先级2
+
+        # 3. 如果 last player 有至少两个必胜点，返回其中一个
+        if len(self.winning_moves[last_p]) >= 2:
+            return self.winning_moves[last_p][0]
+
+        # 无符合条件的点
+        return None
+        
+
+    def ucb1(self, player):
         """本节点在指定玩家视角下的 UCB1 值。未访问过 → 无穷大。"""
         if self.visits == 0:
             return float("inf")
@@ -126,10 +179,10 @@ class MCTSEngine:
 
         返回: ((row, col), elapsed_time_seconds, iterations_count)
         """
-        # ---- 计算 root 节点的 Key_Point ----
-        key_points = self._compute_key_points(board, last_moves or {})
-
-        root = _Node(list(board), turn, key_points=key_points)
+        root = _Node(list(board), turn)
+        for player in range (1, 4):
+            root.winning_moves[player] = self._find_winning_moves(board, player)
+        # print("Winning moves:", root.winning_moves)
 
         t0 = time.time()
         actual_iters = 0
@@ -146,12 +199,10 @@ class MCTSEngine:
             raise RuntimeError("无可落子位置")
 
         best = max(root.children, key=lambda c: c.visits)
+        #print("winning moves after search:", best.winning_moves)
         elapsed = time.time() - t0
-        print("Best move:", best.move, "Visits:", best.visits, "Wins:", best.wins,
+        print("player", self.player_id, "Best move:", best.move, "Visits:", best.visits, "Wins:", best.wins,
               "Time:", f"{elapsed:.3f}s", "Iters:", actual_iters)
-        # 选择一个次优解
-        second_best = sorted(root.children, key=lambda c: c.visits, reverse=True)[1]
-        print("Second best move:", second_best.move, "Visits:", second_best.visits, "Wins:", second_best.wins)
         return best.move, elapsed, actual_iters
 
     # ---- Selection & Expansion ----
@@ -163,21 +214,45 @@ class MCTSEngine:
 
         到达叶节点后，从 untried 列表 pop 一个落子扩展（Key_Point 优先）。
         """
-        while True:
+        for _ in range(5):
             if self._is_terminal(node):
                 return node
 
-            untried = node.get_untried_moves()
-            if untried:
-                return self._expand(node, untried)
+            priority_move = node.get_priority_move()
+            if priority_move is not None:
+                # 有优先落子，直接返回该节点
+                if node.children:
+                    node = node.children[0]
+                    if node.winner is not None:
+                        return node
+                else: 
+                    node = self._expand_priority_move(node, priority_move)
+                    if node.update_winning_moves():
+                        # 此为必胜一步，当前玩家获胜
+                        node.winner = node.parent.turn
+                        return node
 
-            node = node.best_child(node.turn)
+            else:
+                # 无优先落子, 进入 UCB1 选择
+                untried = node.get_untried_moves()
+                if untried:
+                    node = self._expand(node, untried)
+                    if node.update_winning_moves():
+                        # 此为必胜一步，当前玩家获胜
+                        node.winner = node.parent.turn
+                        return node
+                    
+                else:
+                    node = node.best_child(node.turn)
+                    if node.winner is not None:
+                        return node
+        return node
 
     def _expand(
         self, parent: _Node, untried: List[Tuple[int, int]]
     ) -> _Node:
         """扩展一个未尝试落子为子节点。"""
-        row, col = untried.pop()
+        row, col = untried.pop(0)
         w, x, y, z = pos_2d_to_4d(row, col)
         idx = pos_4d_to_index(w, x, y, z)
 
@@ -185,10 +260,28 @@ class MCTSEngine:
         new_board[idx] = parent.turn
         next_turn = (parent.turn % 3) + 1
 
-        child = _Node(new_board, next_turn, move=(row, col),
-                      parent=parent, move_idx=idx)
+        child = _Node(new_board, next_turn, move=(row, col), parent=parent)
+        child.winning_moves = [lst[:] for lst in parent.winning_moves]
+            
         parent.children.append(child)
         return child
+
+    def _expand_priority_move(self, parent, priority_move):
+        """扩展优先落子为子节点。"""
+        idx = priority_move
+        w, x, y, z = pos_index_to_4d(idx)
+        row, col = pos_4d_to_2d(w, x, y, z)
+
+        new_board = list(parent.board)
+        new_board[idx] = parent.turn
+        next_turn = (parent.turn % 3) + 1
+
+        child = _Node(new_board, next_turn, move=(row, col), parent=parent)
+        child.winning_moves = [lst[:] for lst in parent.winning_moves]
+            
+        parent.children.append(child)
+        return child
+
 
     # ---- Simulation ----
 
@@ -206,27 +299,13 @@ class MCTSEngine:
 
         board = list(node.board)
         turn = node.turn
-        # FIFO 队列：存储一维索引，优先落子位置
-        key_queue: List[int] = []
 
-        remaining = TOTAL_CELLS - sum(1 for v in board if v != EMPTY)
-        for _ in range(remaining):
-            # ---- 选择落子：优先从队列头部取 ----
-            idx: int = -1
-            while key_queue:
-                candidate = key_queue.pop(0)
-                if board[candidate] == EMPTY:
-                    idx = candidate
-                    break
-
-            if idx == -1:
-                # 队列无有效位置，随机选择
-                empty = [i for i, v in enumerate(board) if v == EMPTY]
-                if not empty:
-                    return 0
-                idx = random.choice(empty)
-
-            # ---- 落子 ----
+        for _ in range(TOTAL_CELLS - sum(1 for v in board if v != EMPTY)):
+            # 随机选择一步
+            empty = [i for i, v in enumerate(board) if v == EMPTY]
+            if not empty:
+                return 0
+            idx = random.choice(empty)
             board[idx] = turn
 
             # ---- 检测：当前玩家是否胜利？是否有必胜点？----
@@ -298,12 +377,49 @@ class MCTSEngine:
         return result
 
     @staticmethod
-    def _is_terminal(node: _Node) -> bool:
-        # 已经有人赢
-        if node.winner is not None:
-            return True
+    def _is_terminal(node):
         # 棋盘满
         if not any(v == EMPTY for v in node.board):
             node.winner = 0
             return True
         return False
+
+#    @staticmethod
+#    def _find_winning_move(board, player):
+        """
+        查找 player 是否存在一步获胜的落子。
+        存在则返回该位置索引，否则返回 None。
+        """
+        for idx, v in enumerate(board):
+            if v == EMPTY:
+                board[idx] = player
+
+                if check_win_at(board, idx, player):
+                    board[idx] = EMPTY
+                    return idx
+
+                board[idx] = EMPTY
+
+        return None
+
+    @staticmethod
+    def _find_winning_moves(board, player):
+        from FourInFour.GameCore.board import WINNING_LINES
+        winning_moves = []
+        for line in WINNING_LINES:
+            count = 0
+            empty_idx = None
+            for idx in line:
+                cell = board[idx]
+                if cell == player:
+                    count += 1
+                elif cell == EMPTY:
+                    empty_idx = idx
+                else:
+                    # 这条线上有对手棋子，不可能形成四连
+                    count = -1
+                    break
+            if count == 3 and empty_idx is not None:
+                winning_moves.append(empty_idx)
+        return winning_moves
+
