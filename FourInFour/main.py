@@ -434,9 +434,9 @@ async def _handle_undo(websocket: WebSocket, slot: Optional[int]) -> None:
         return
 
     # 检查是否处于可悔棋状态：
-    # 允许：暂停中、或当前是人类玩家的回合
-    # 不允许：电脑正在思考（即非暂停且当前是电脑回合）
-    can_undo = game.paused or not game.is_computer_turn()
+    # 允许：游戏已结束、暂停中、或当前是人类玩家的回合
+    # 不允许：电脑正在思考（即非暂停、未结束、且当前是电脑回合）
+    can_undo = game.game_over or game.paused or not game.is_computer_turn()
     if not can_undo:
         await manager.send_to(websocket, {
             "type": "error",
