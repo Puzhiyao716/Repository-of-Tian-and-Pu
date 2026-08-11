@@ -35,7 +35,7 @@ UCB_C = 1.414
 class _Node:
     """MCTS 搜索树节点。"""
 
-    __slots__ = ("board", "turn", "move", "parent", "children", "visits", "wins", "_untried", "winner", "losing_moves", "losing_checked")
+    __slots__ = ("board", "turn", "move", "parent", "children", "visits", "wins", "_untried", "winner", "winning_moves")
 
     def __init__(self, board, turn, move=None, parent=None):
         self.board = board               # 棋盘状态（256 长度列表）
@@ -47,8 +47,7 @@ class _Node:
         self.wins = {1: 0, 2: 0, 3: 0}
         self._untried = None
         self.winner = None
-        self.losing_moves = []
-        self.losing_checked = False
+        self.winning_moves = [[], [], [], []]  # 每个玩家的必胜一步列表
 
     def get_untried_moves(self):
         """返回当前棋盘上所有空位（打乱以增加多样性）。"""
@@ -63,6 +62,70 @@ class _Node:
             random.shuffle(moves)
             self._untried = moves
         return self._untried
+
+    def update_winning_moves(self):
+        """更新前一步导致的的必胜一步列表变化。 若直接赢则返回 True，否则返回 False。"""
+        from FourInFour.GameCore.board import LINES_BY_CELL
+        player = (self.turn + 1) % 3 + 1  # 上一回合玩家
+        w, x, y, z = pos_2d_to_4d(self.move[0], self.move[1])
+        idx = pos_4d_to_index(w, x, y, z)
+
+        # 删除必胜列表中的上一步落子
+        if idx in self.winning_moves[player]:
+            return True
+        for p in range(1, 4):
+            if idx in self.winning_moves[p]:
+                self.winning_moves[p].remove(idx)
+        
+        # 只检查与上一步落子相关的连线
+        self.winning_moves[player] = []
+        for line in LINES_BY_CELL[idx]:
+            count = 0
+            empty_idx = None
+            for idx in line:
+                cell = self.board[idx]
+                if cell == player:
+                    count += 1
+                elif cell == EMPTY:
+                    empty_idx = idx
+                else:
+                    # 这条线上有对手棋子，不可能形成四连
+                    count = -1
+                    break
+            if count == 3 and empty_idx is not None:
+                self.winning_moves[player].append(empty_idx)
+        return False
+
+    def get_priority_move(self):
+        """
+        按优先级返回一个落子索引（优先级1→2→3），若无可选则返回 None。
+        依赖 self.turn（当前玩家）、self.winning_moves（列表，每个玩家对应一个列表）
+        """
+        current = self.turn
+        next_p = (current % 3) + 1
+        last_p = (current + 1) % 3 + 1 
+
+        # 1. 当前玩家有必胜点
+        if self.winning_moves[current]:
+            return self.winning_moves[current][0]
+
+        # 2. 下一个玩家有必胜点
+        if self.winning_moves[next_p]:
+            last_moves = self.winning_moves[last_p]
+            # 尝试选择一个 next 必胜点，该点最好能破坏 last 的必胜点，至少使得走完后 last 的必胜点数量 < 2
+            # 走 move 后 last 剩余的必胜点数量 = 原数量 - (move 是否在 last_moves 中)
+            remaining = len(last_moves) - (1 if self.winning_moves[next_p][0] in last_moves else 0)
+            if remaining < 2:
+                return self.winning_moves[next_p][0]   # 符合条件，选择此点阻止 next
+        # 所有 next 必胜点都会导致 last 剩余 ≥2，放弃优先级2
+
+        # 3. 如果 last player 有至少两个必胜点，返回其中一个
+        if len(self.winning_moves[last_p]) >= 2:
+            return self.winning_moves[last_p][0]
+
+        # 无符合条件的点
+        return None
+        
 
     def ucb1(self, player):
         """本节点在指定玩家视角下的 UCB1 值。未访问过 → 无穷大。"""
@@ -102,6 +165,9 @@ class MCTSEngine:
         返回: (row, col, elapsed_time, iterations)
         """
         root = _Node(list(board), turn)
+        for player in range (1, 4):
+            root.winning_moves[player] = self._find_winning_moves(board, player)
+        # print("Winning moves:", root.winning_moves)
 
         t0 = time.time()
         actual_iters = 0
@@ -118,12 +184,10 @@ class MCTSEngine:
             raise RuntimeError("无可落子位置")
 
         best = max(root.children, key=lambda c: c.visits)
+        #print("winning moves after search:", best.winning_moves)
         elapsed = time.time() - t0
-        print("Best move:", best.move, "Visits:", best.visits, "Wins:", best.wins,
+        print("player", self.player_id, "Best move:", best.move, "Visits:", best.visits, "Wins:", best.wins,
               "Time:", f"{elapsed:.3f}s", "Iters:", actual_iters)
-        #选择一个次优解
-        second_best = sorted(root.children, key=lambda c: c.visits, reverse=True)[1]
-        print("Second best move:", second_best.move, "Visits:", second_best.visits, "Wins:", second_best.wins)
         return best.move, elapsed, actual_iters
 
     # ---- Selection & Expansion ----
@@ -133,25 +197,43 @@ class MCTSEngine:
         从根出发选叶节点。每层由「当前回合玩家」选对自己最有利的子节点，
         体现「每个对手都为自己的胜利而奋斗」。
         """
-        while True:
+        for _ in range(5):
             if self._is_terminal(node):
                 return node
-            if not node.losing_checked:
-                # ===== 新增：扩展前检查必胜一步 =====
-                win_move = self._find_winning_move(node.board, node.turn)
-                if win_move is not None:
-                    return self._expand_specific(node, win_move)
-                node.losing_checked = True
-            if node.losing_moves:
-                return self._expand_specific(node, node.losing_moves[0])
-            untried = node.get_untried_moves()
-            if untried:
-                return self._expand(node, untried)
-            node = node.best_child(node.turn)
+
+            priority_move = node.get_priority_move()
+            if priority_move is not None:
+                # 有优先落子，直接返回该节点
+                if node.children:
+                    node = node.children[0]
+                    if node.winner is not None:
+                        return node
+                else: 
+                    node = self._expand_priority_move(node, priority_move)
+                    if node.update_winning_moves():
+                        # 此为必胜一步，当前玩家获胜
+                        node.winner = node.parent.turn
+                        return node
+
+            else:
+                # 无优先落子, 进入 UCB1 选择
+                untried = node.get_untried_moves()
+                if untried:
+                    node = self._expand(node, untried)
+                    if node.update_winning_moves():
+                        # 此为必胜一步，当前玩家获胜
+                        node.winner = node.parent.turn
+                        return node
+                    
+                else:
+                    node = node.best_child(node.turn)
+                    if node.winner is not None:
+                        return node
+        return node
 
     def _expand(self, parent, untried):
         """扩展一个未尝试落子为子节点。"""
-        row, col = untried.pop()
+        row, col = untried.pop(0)
         w, x, y, z = pos_2d_to_4d(row, col)
         idx = pos_4d_to_index(w, x, y, z)
 
@@ -160,12 +242,14 @@ class MCTSEngine:
         next_turn = (parent.turn % 3) + 1
 
         child = _Node(new_board, next_turn, move=(row, col), parent=parent)
+        child.winning_moves = [lst[:] for lst in parent.winning_moves]
             
         parent.children.append(child)
         return child
 
-    def _expand_specific(self, parent, idx):
-        """扩展一个指定落子为子节点（必胜一步）。"""
+    def _expand_priority_move(self, parent, priority_move):
+        """扩展优先落子为子节点。"""
+        idx = priority_move
         w, x, y, z = pos_index_to_4d(idx)
         row, col = pos_4d_to_2d(w, x, y, z)
 
@@ -174,11 +258,11 @@ class MCTSEngine:
         next_turn = (parent.turn % 3) + 1
 
         child = _Node(new_board, next_turn, move=(row, col), parent=parent)
-        
-        # 这个一定赢
-        child.winner = parent.turn
+        child.winning_moves = [lst[:] for lst in parent.winning_moves]
+            
         parent.children.append(child)
         return child
+
 
     # ---- Simulation ----
 
@@ -193,14 +277,7 @@ class MCTSEngine:
         turn = node.turn
 
         for _ in range(TOTAL_CELLS - sum(1 for v in board if v != EMPTY)):
-            if _ < 1:
-                # 前两步下，当前玩家若有一步获胜，立即执行
-                win_move = MCTSEngine._find_winning_move(board, turn)
-                if win_move is not None:
-                    board[win_move] = turn
-                    return turn
-
-            # 无必胜点，随机选择一步
+            # 随机选择一步
             empty = [i for i, v in enumerate(board) if v == EMPTY]
             if not empty:
                 return 0
@@ -225,9 +302,6 @@ class MCTSEngine:
 
     @staticmethod
     def _is_terminal(node):
-        # 已经有人赢
-        if node.winner is not None:
-            return True
         # 棋盘满
         if not any(v == EMPTY for v in node.board):
             node.winner = 0
@@ -253,8 +327,9 @@ class MCTSEngine:
         return None
 
     @staticmethod
-    def _find_winning_move(board, player):
+    def _find_winning_moves(board, player):
         from FourInFour.GameCore.board import WINNING_LINES
+        winning_moves = []
         for line in WINNING_LINES:
             count = 0
             empty_idx = None
@@ -269,5 +344,6 @@ class MCTSEngine:
                     count = -1
                     break
             if count == 3 and empty_idx is not None:
-                return empty_idx
-        return None
+                winning_moves.append(empty_idx)
+        return winning_moves
+
