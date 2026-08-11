@@ -329,10 +329,9 @@ class ABMCTSEngine:
         best = max(root.children, key=lambda c: c.visits)
         elapsed = time.perf_counter() - t0
         # ---- 输出最终决策 (best.move 是四维坐标，日志中转为 2D 显示) ----
-        best_2d = pos_4d_to_2d(*best.move)
         print(f"[INFO TIAN] ====== 搜索完成 ======")
         print(f"[INFO TIAN] 总迭代: {actual_iters}, 耗时: {elapsed:.3f}s")
-        print(f"[INFO TIAN] 最佳落子: {best_2d}, "
+        print(f"[INFO TIAN] 最佳落子: {best.move}, "
               f"Visits: {best.visits}, "
               f"胜率: P1={best.wins[1]/best.visits:.3f} "
               f"P2={best.wins[2]/best.visits:.3f} "

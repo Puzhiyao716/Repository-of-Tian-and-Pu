@@ -21,7 +21,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from FourInFour.GameCore import GameRoom, PLAYER_SYMBOLS, EMPTY
+from FourInFour.GameCore import GameRoom, PLAYER_SYMBOLS, EMPTY, pos_4d_to_2d
 
 # ============================================================================
 # 应用初始化
@@ -170,7 +170,12 @@ async def process_computer_turns() -> None:
             break
 
         # 电脑选择落子位置（传入所有玩家最近一步棋的索引）
-        row, col = player.choose_move(game.board, game._last_move_index)
+        move_data = player.choose_move(game.board, game._last_move_index)
+        # 引擎可能返回四维 (w,x,y,z) 或二维 (row,col)，统一转为二维供 game.make_move
+        if len(move_data) == 4:
+            row, col = pos_4d_to_2d(*move_data)
+        else:
+            row, col = move_data
 
         # 提取思考统计（普通型 AI 才有效）
         thinking_time = 0.0

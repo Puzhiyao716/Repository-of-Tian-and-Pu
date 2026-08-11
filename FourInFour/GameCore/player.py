@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple, Dict
 import random
 
-from .board import PLAYER_SYMBOLS, pos_2d_to_4d, pos_4d_to_index, pos_4d_to_2d
+from .board import PLAYER_SYMBOLS, pos_2d_to_4d, pos_4d_to_index
 
 
 # ============================================================================
@@ -140,11 +140,12 @@ class _ComputerPlayerMCTS(Player):
         raise NotImplementedError
 
     def choose_move(self, board: List[int],
-                    last_moves: dict = None) -> Tuple[int, int]:
+                    last_moves: dict = None) -> Tuple[int, int, int, int]:
         """
         使用 MCTS 搜索选择落子。
 
         last_moves: {player_id: 一维索引}，所有玩家最近一步棋。
+        返回: (w, x, y, z) 四维坐标
         """
         if self._engine is None:
             self._engine = self._get_engine()
@@ -155,14 +156,9 @@ class _ComputerPlayerMCTS(Player):
         merged.update(self._last_move_index)
         move_data, elapsed, iters = self._engine.choose_move(
             board, self.player_id, merged)
-        # 引擎可能返回四维 (w,x,y,z) 或二维 (row,col)，统一转为二维
-        if len(move_data) == 4:
-            row, col = pos_4d_to_2d(*move_data)
-        else:
-            row, col = move_data
         self._last_thinking_time = elapsed
         self._last_thinking_iters = iters
-        return (row, col)
+        return move_data
 
 
 class ComputerPlayerNormal(_ComputerPlayerMCTS):
