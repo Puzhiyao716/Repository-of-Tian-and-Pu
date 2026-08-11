@@ -22,7 +22,7 @@ from .board import (
     pos_2d_to_4d, pos_4d_to_index, pos_index_to_4d,
     check_win_at, get_winning_line,
 )
-from .player import Player, HumanPlayer, ComputerPlayerRandom, ComputerPlayerNormal, NormalTian
+from .player import _Player, HumanPlayer, ComputerPlayerRandom, ComputerPlayerNormal, NormalTian
 
 
 class GameRoom:
@@ -49,7 +49,7 @@ class GameRoom:
         self.game_over: bool = False
         self.winner: int = EMPTY
         self.winning_line: List[int] = []       # 获胜线的 4 个一维索引
-        self.players: Dict[int, Player] = {}          # 游戏中活跃玩家
+        self.players: Dict[int, _Player] = {}          # 游戏中活跃玩家
         self._reservations: Dict[int, object] = {}    # 座位预约
         self.started: bool = False
         self._last_move_index: Dict[int, int] = {}
@@ -116,7 +116,7 @@ class GameRoom:
         p = self.players.get(self.current_turn)
         return p is not None and not p.is_human
 
-    def get_player(self, player_id: int) -> Optional[Player]:
+    def get_player(self, player_id: int) -> Optional[_Player]:
         """获取活跃玩家对象。"""
         return self.players.get(player_id)
 
@@ -380,7 +380,7 @@ class GameRoom:
         return self.get_state()
 
 
-def _class_to_strategy(player: Player) -> str:
+def _class_to_strategy(player: _Player) -> str:
     """从 Player 子类推导策略名。"""
     from .player import ComputerPlayerRandom, ComputerPlayerNormal, NormalTian
     if isinstance(player, NormalTian):

@@ -25,7 +25,7 @@ from .board import PLAYER_SYMBOLS, pos_2d_to_4d, pos_4d_to_index
 # Player 抽象基类
 # ============================================================================
 
-class Player(ABC):
+class _Player(ABC):
     """
     玩家抽象基类。
 
@@ -64,7 +64,7 @@ class Player(ABC):
 # HumanPlayer
 # ============================================================================
 
-class HumanPlayer(Player):
+class HumanPlayer(_Player):
     """人类玩家 —— 落子由 WebSocket 消息驱动。"""
 
     @property
@@ -76,7 +76,7 @@ class HumanPlayer(Player):
 # ComputerPlayerRandom（随机型）
 # ============================================================================
 
-class ComputerPlayerRandom(Player):
+class ComputerPlayerRandom(_Player):
     """随机型电脑 —— 在所有合法空位中均匀随机选择。"""
 
     @property
@@ -97,7 +97,7 @@ class ComputerPlayerRandom(Player):
 # ComputerPlayerNormal（普通型 / MCTS）
 # ============================================================================
 
-class _ComputerPlayerMCTS(Player):
+class _ComputerPlayer(_Player):
     """电脑玩家基类 —— MCTS 引擎公共逻辑（惰性初始化、统计、落子追踪）。"""
 
     def __init__(self, player_id: int,
@@ -161,7 +161,7 @@ class _ComputerPlayerMCTS(Player):
         return move_data
 
 
-class ComputerPlayerNormal(_ComputerPlayerMCTS):
+class ComputerPlayerNormal(_ComputerPlayer):
     """
     普通型电脑 —— 蒙特卡洛树搜索 + UCB1。
 
@@ -177,7 +177,7 @@ class ComputerPlayerNormal(_ComputerPlayerMCTS):
         )
 
 
-class NormalTian(_ComputerPlayerMCTS):
+class NormalTian(_ComputerPlayer):
     """
     Tian型电脑 —— MCTS + UCB1 + Alphabet 剪枝。
 
@@ -187,7 +187,7 @@ class NormalTian(_ComputerPlayerMCTS):
     """
 
     def _get_engine(self):
-        from FourInFour.AI.AB_mcts import ABMCTSEngine
+        from FourInFour.AI import ABMCTSEngine
         return ABMCTSEngine(
             player_id=self.player_id,
             time_limit=self._time_limit,
