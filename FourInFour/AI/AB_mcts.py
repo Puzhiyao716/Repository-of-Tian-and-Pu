@@ -411,7 +411,7 @@ class ABMCTSEngine:
         result: Dict[int, Set[Tuple[int, int, int, int]]] = {
             1: set(), 2: set(), 3: set()
         }
-        if not three_last_moves:
+        if len(three_last_moves) < 3:
             return result
 
         seen: set = set()
@@ -421,7 +421,7 @@ class ABMCTSEngine:
             idx = three_last_moves[playerid]
             # 只检查 pid 自己：idx 上的棋子就是 pid 放的
             _won, pot_points = check_win_at(board = board, 
-                                            last_move_idx = idx, 
+                                            last_move_index = idx, 
                                             player = playerid,
                                             potential_win=True)
             if pot_points:
