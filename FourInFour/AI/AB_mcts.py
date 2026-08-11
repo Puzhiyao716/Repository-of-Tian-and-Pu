@@ -416,15 +416,19 @@ class ABMCTSEngine:
 
         seen: set = set()
 
-        for pid, idx in three_last_moves.items():
+        for i in range(2, 5):
+            playerid = (self.player_id + i) % 3 + 1
+            idx = three_last_moves[playerid]
             # 只检查 pid 自己：idx 上的棋子就是 pid 放的
-            _won, pot_points = check_win_at(board, idx, pid,
+            _won, pot_points = check_win_at(board = board, 
+                                            last_move_idx = idx, 
+                                            player = playerid,
                                             potential_win=True)
             if pot_points:
                 for pt in pot_points:  # pt 已是四维 (w, x, y, z)
                     if pt not in seen:
                         seen.add(pt)
-                        result[pid].add(pt)
+                        result[playerid].add(pt)
 
         return result
 
