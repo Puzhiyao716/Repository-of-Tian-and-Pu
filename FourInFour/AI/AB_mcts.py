@@ -122,6 +122,114 @@ class _AB_Node:
         )
         return child
 
+    def best_child(self, player: int) -> "_AB_Node":
+        """返回该玩家视角下 UCB1 最高的子节点。"""
+        return max(self.children, key=lambda c: c._ucb1(player))
+
+    def Make_All_Children(self) -> None:
+        """为当前节点生成所有可能的子节点（考虑必胜点）。"""
+        candidates = self._search_all_moves(
+            self.board, self.turn, self.Key_Points
+        )
+        random.shuffle(candidates)
+        for move in candidates:
+            child = _AB_Node.from_parent(self, move)
+            self.children.append(child)
+        if self.children:
+            self.is_leaf = False
+
+    @staticmethod
+    def _check_win_and_renew_keypoint(
+            board: List[int], 
+            last_move_idx: int, 
+            last_player: int,
+            Key_Points: Dict[int, Set[Tuple[int, int, int, int]]]
+    )->bool:
+        """
+        检查 last_player 是否已获胜，并更新必胜点列表。
+
+        1. 调用 check_win_at 检测 last_player 是否在 last_move_idx 获胜
+        2. 若获胜，返回 True（Key_Points 不更新，因为游戏已结束）
+        3. 若未获胜，更新 Key_Points：
+           - 从所有玩家的必胜点中移除被占据的位置（O(1) Set.discard）
+           - 若产生了新的必胜点，归入 last_player（排除已被其他玩家占据的）
+
+        返回 True 表示 last_player 获胜，False 表示未获胜。
+        """
+        # 将一维索引转换为四维坐标，用于 Key_Points 的 discard 操作
+        move_4d = _INDEX_TO_4D[last_move_idx]
+
+        # 检测 last_player 是否在 last_move_idx 处获胜
+        won, new_key_points = check_win_at(
+            board, last_move_idx, last_player, potential_win=True
+        )
+        if won:
+            return True
+
+        # 更新必胜点：移除被占据的位置
+        for pid in Key_Points:
+            Key_Points[pid].discard(move_4d)
+        # 加入新产生的必胜点（归入 last_player）
+        if new_key_points:
+            for pt in new_key_points:  # pt 已是四维 (w, x, y, z)
+                if pt not in Key_Points[last_player % 3 + 1] \
+                and pt not in Key_Points[(last_player - 2) % 3 + 1]:
+                    Key_Points[last_player].add(pt)
+
+        return False
+        
+
+    def _simulate(self) -> int:
+        """从当前节点出发进行随机模拟至终局，遵循必胜点优先落子规则。
+
+        每次落子后切换上家/下家身份，动态更新必胜点列表。
+        全程操作在副本上进行，不修改节点自身的任何数据。
+        坐标统一使用四维 (w, x, y, z)，仅在 board/check_win_at 处转一维。
+
+        返回胜者编号（1/2/3），或 0 表示平局。
+        """
+        # ---- 复制状态，避免修改 self ----
+        board = self.board.copy()
+        turn = self.turn
+        Key_Points: Dict[int, Set[Tuple[int, int, int, int]]] = {
+            pid: set(pts) for pid, pts in self.Key_Points.items()
+        }
+
+        # 追踪上一手落子信息（初始为到达本节点的那一手）
+        last_player = self.up_player
+        last_move_idx = self.move_idx
+
+        # ---- 模拟循环 ----
+        while True:
+            # 1. 检测上一手是否已获胜并更新必胜点
+            if _AB_Node._check_win_and_renew_keypoint(
+                board, last_move_idx, last_player, Key_Points
+            ):
+                return last_player
+
+            # 2. 按必胜点规则获取所有候选落子，随机选一个
+            candidates = _AB_Node._search_all_moves(board, turn, Key_Points)
+            if not candidates:
+                return 0  # 无可落子，平局
+            w, x, y, z = random.choice(candidates)
+            move_idx = pos_4d_to_index(w, x, y, z)
+
+            # 3. 落子
+            board[move_idx] = turn
+
+            # 4. 为下一轮准备
+            last_player = turn
+            last_move_idx = move_idx
+            turn = turn % 3 + 1
+   
+    def _ucb1(self, player: int) -> float:
+        """本节点在指定玩家视角下的 UCB1 值。未访问过 → 无穷大。"""
+        if self.visits == 0:
+            return float("inf")
+        return (self.wins[player] / self.visits) + UCB_C * math.sqrt(
+            math.log(self.parent.visits) / self.visits
+        )
+
     @staticmethod
     def _search_all_moves(
         board: List[int], turn: int,
@@ -162,99 +270,6 @@ class _AB_Node:
             if v == EMPTY:
                 result.append(_INDEX_TO_4D[i])
         return result
-
-    def Make_All_Children(self) -> None:
-        """为当前节点生成所有可能的子节点（考虑必胜点）。"""
-        candidates = self._search_all_moves(
-            self.board, self.turn, self.Key_Points
-        )
-        random.shuffle(candidates)
-        for move in candidates:
-            child = _AB_Node.from_parent(self, move)
-            self.children.append(child)
-        if self.children:
-            self.is_leaf = False
-
-    def _simulate(self) -> int:
-        """从当前节点出发进行随机模拟至终局，遵循必胜点优先落子规则。
-
-        每次落子后切换上家/下家身份，动态更新必胜点列表。
-        全程操作在副本上进行，不修改节点自身的任何数据。
-        坐标统一使用四维 (w, x, y, z)，仅在 board/check_win_at 处转一维。
-
-        返回胜者编号（1/2/3），或 0 表示平局。
-        """
-        # ---- 复制状态，避免修改 self ----
-        board = self.board.copy()
-        turn = self.turn
-        Key_Points: Dict[int, Set[Tuple[int, int, int, int]]] = {
-            pid: set(pts) for pid, pts in self.Key_Points.items()
-        }
-
-        # ---- 步骤1：检查上一步落子是否已获胜（仅非 root 节点） ----
-        if self.move_idx >= 0:
-            last_player = self.up_player
-            won, new_key_points = check_win_at(
-                board, self.move_idx, last_player, potential_win=True
-            )
-            if won:
-                # 胜利，返回胜者编号
-                return last_player
-
-            # 更新必胜点：移除被上一步占据的（O(1) Set.discard），加入新产生的
-            for pid in Key_Points:
-                Key_Points[pid].discard(self.move)
-            if new_key_points:
-                for pt in new_key_points:  # pt 已是四维 (w, x, y, z)
-                    if pt not in Key_Points[last_player % 3 + 1] \
-                    and pt not in Key_Points[(last_player - 2) % 3 + 1]:
-                        Key_Points[last_player].add(pt)
-
-        # ---- 步骤2：模拟循环 ----
-        while True:
-            # 2a. 按必胜点规则获取所有候选落子（四维坐标），随机选一个
-            candidates = _AB_Node._search_all_moves(board, turn, Key_Points)
-            if not candidates:
-                return 0  # 无可落子，平局
-            w, x, y, z = random.choice(candidates)
-            move_idx = pos_4d_to_index(w, x, y, z)
-
-            # 2c. 落子
-            board[move_idx] = turn
-
-            # 2d. 检测胜负与必胜点
-            won, new_key_points = check_win_at(
-                board, move_idx, turn, potential_win=True
-            )
-            if won:
-                return turn
-
-            # 2e. 更新必胜点：O(1) Set.discard 移除被占据的，加入新产生的
-            move_4d = (w, x, y, z)
-            for pid in Key_Points:
-                Key_Points[pid].discard(move_4d)
-            if new_key_points:
-                next_p = turn % 3 + 1
-                prev_p = (turn - 2) % 3 + 1
-                for pt in new_key_points:  # pt 已是四维 (w, x, y, z)
-                    if pt not in Key_Points[next_p] \
-                    and pt not in Key_Points[prev_p]:
-                        Key_Points[turn].add(pt)
-
-            # 2f. 切换到下一玩家
-            turn = turn % 3 + 1
-   
-    def ucb1(self, player: int) -> float:
-        """本节点在指定玩家视角下的 UCB1 值。未访问过 → 无穷大。"""
-        if self.visits == 0:
-            return float("inf")
-        return (self.wins[player] / self.visits) + UCB_C * math.sqrt(
-            math.log(self.parent.visits) / self.visits
-        )
-
-    def best_child(self, player: int) -> "_AB_Node":
-        """返回该玩家视角下 UCB1 最高的子节点。"""
-        return max(self.children, key=lambda c: c.ucb1(player))
 
 
 # ============================================================================
