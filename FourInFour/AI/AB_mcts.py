@@ -282,7 +282,6 @@ class Simulator:
         self._empty_point: Set[int] = {
             i for i, v in enumerate(board) if v == EMPTY
         }
-        print(f"[INFO TIAN] 模拟器初始化：空位数 {len(self._empty_point)}")
 
     # ------------------------------------------------------------------
     # 对外接口
