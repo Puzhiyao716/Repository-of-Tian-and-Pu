@@ -322,6 +322,19 @@ class ABMCTSEngine:
 
         root = _AB_Node(board, turn, key_points=key_points)
 
+        # ---- 展开 root 的所有子节点（利用必胜点剪枝，只需一次） ----
+        root.Make_All_Children()
+        print(f"[INFO TIAN] root 层展开 {len(root.children)} 个子节点")
+        if not root.children:
+            raise RuntimeError("无可落子位置")
+
+        # ---- 短路：唯一子节点直接返回，无需模拟 ----
+        if len(root.children) == 1:
+            only_child = root.children[0]
+            print(f"[INFO TIAN] 唯一候选落子: {only_child.move}，直接返回（跳过模拟）")
+            print()
+            return only_child.move, 0.0, 1
+
         t0 = time.perf_counter()
         actual_iters = 0
         # 每 N 轮检查一次时间，减少系统调用
@@ -332,13 +345,16 @@ class ABMCTSEngine:
                 if time.perf_counter() - t0 > self.time_limit:
                     break
 
-            # 开始蒙特卡洛
-            leaf = self._select(root)               # 1. Selection + Expansion
+            # 1. Selection + Expansion：选择叶节点
+            #    优先随机探索未访问过的子节点，全部访问过后用 UCB1 选最优
+            unvisited = [c for c in root.children if c.visits == 0]
+            if unvisited:
+                leaf = random.choice(unvisited)
+            else:
+                leaf = root.best_child(self.player_id)
+
             score = leaf._simulate()                # 2. Simulation
             self._backprop(leaf, score)             # 3. Backpropagation
-
-        if not root.children:
-            raise RuntimeError("无可落子位置")
 
         best = max(root.children, key=lambda c: c.visits)
         elapsed = time.perf_counter() - t0
@@ -353,6 +369,7 @@ class ABMCTSEngine:
         print()
         return best.move, elapsed, actual_iters
 
+    # [DEPRECATED] _select 已内联到 engine_move 中，请勿使用
     def _select(self, root: _AB_Node) -> _AB_Node:
         """选择下一个需要模拟的叶节点。
 
