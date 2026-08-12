@@ -422,7 +422,7 @@ class ABMCTSEngine:
             only_child = root.children[0]
             print(f"[INFO TIAN] 唯一候选落子: {only_child.move}，直接返回（跳过模拟）")
             print()
-            return only_child.move, 0.0, 1
+            return only_child.move, 0.1, 1
 
         t0 = time.perf_counter()
         actual_iters = 0
