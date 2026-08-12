@@ -179,47 +179,17 @@ class _AB_Node:
         return False
         
     def _simulate(self) -> int:
-        """从当前节点出发进行随机模拟至终局，遵循必胜点优先落子规则。
-
-        每次落子后切换上家/下家身份，动态更新必胜点列表。
-        全程操作在副本上进行，不修改节点自身的任何数据。
-        坐标统一使用四维 (w, x, y, z)，仅在 board/check_win_at 处转一维。
+        """从当前节点出发进行随机模拟至终局，委托 Simulator 执行。
 
         返回胜者编号（1/2/3），或 0 表示平局。
         """
-        # ---- 复制状态，避免修改 self ----
-        board = self.board.copy()
-        turn = self.turn
-        Key_Points: Dict[int, Set[Tuple[int, int, int, int]]] = {
-            pid: set(pts) for pid, pts in self.Key_Points.items()
-        }
-
-        # 追踪上一手落子信息（初始为到达本节点的那一手）
-        last_player = self.up_player
-        last_move_idx = self.move_idx
-
-        # ---- 模拟循环 ----
-        while True:
-            # 1. 检测上一手是否已获胜并更新必胜点
-            if _AB_Node._check_win_and_renew_keypoint(
-                board, last_move_idx, last_player, Key_Points
-            ):
-                return last_player
-
-            # 2. 按必胜点规则获取所有候选落子，随机选一个
-            candidates = _AB_Node._search_all_moves(board, turn, Key_Points)
-            if not candidates:
-                return 0  # 无可落子，平局
-            w, x, y, z = random.choice(candidates)
-            move_idx = pos_4d_to_index(w, x, y, z)
-
-            # 3. 落子
-            board[move_idx] = turn
-
-            # 4. 为下一轮准备
-            last_player = turn
-            last_move_idx = move_idx
-            turn = turn % 3 + 1
+        return Simulator(
+            board=self.board,
+            turn=self.turn,
+            key_points=self.Key_Points,
+            last_player=self.up_player,
+            last_move_idx=self.move_idx,
+        ).run()
    
     def _ucb1(self, player: int) -> float:
         """本节点在指定玩家视角下的 UCB1 值。未访问过 → 无穷大。"""
@@ -270,6 +240,125 @@ class _AB_Node:
         #     if v == EMPTY:
         #         result.append(_INDEX_TO_4D[i])
         return result
+
+
+# ============================================================================
+# 模拟器
+# ============================================================================
+
+class Simulator:
+    """从给定状态出发进行随机模拟至终局，遵循必胜点优先落子规则。
+
+    全程操作在副本上进行，不修改外部任何数据。
+    内部维护空位集合，每步落子后增量更新，避免重复扫描整个棋盘。
+    可独立于 _AB_Node 使用，便于测试和复用。
+    """
+
+    def __init__(
+        self,
+        board: List[int],
+        turn: int,
+        key_points: Dict[int, Set[Tuple[int, int, int, int]]],
+        last_player: int,
+        last_move_idx: int,
+    ) -> None:
+        """初始化模拟器。
+
+        board:        当前棋盘快照（会被内部拷贝）
+        turn:         当前回合玩家编号（1/2/3）
+        key_points:   各玩家必胜点集合
+        last_player:  上一手落子玩家编号
+        last_move_idx:上一手落子的一维索引
+        """
+        self._board = board.copy()
+        self._turn = turn
+        self._key_points = {
+            pid: set(pts) for pid, pts in key_points.items()
+        }
+        self._last_player = last_player
+        self._last_move_idx = last_move_idx
+
+        # 维护空位集合（一维索引），每步落子后增量更新，避免重复扫描 256 格棋盘
+        self._empty_point: Set[int] = {
+            i for i, v in enumerate(board) if v == EMPTY
+        }
+        print(f"[INFO TIAN] 模拟器初始化：空位数 {len(self._empty_point)}")
+
+    # ------------------------------------------------------------------
+    # 对外接口
+    # ------------------------------------------------------------------
+
+    def run(self) -> int:
+        """执行模拟至终局，返回胜者编号（1/2/3）或 0 表示平局。"""
+        while True:
+            # 1. 检测上一手是否已获胜并更新必胜点
+            if _AB_Node._check_win_and_renew_keypoint(
+                self._board, self._last_move_idx,
+                self._last_player, self._key_points
+            ):
+                return self._last_player
+
+            # 2. 获取候选落子：优先必胜点策略，否则从空位集合随机选取
+            priority = self._try_keypoint_moves(self._turn)
+            if priority is not None:
+                # 规则 1-3 命中：从 KeyPoint 列表中随机选
+                w, x, y, z = random.choice(priority)
+                move_idx = pos_4d_to_index(w, x, y, z)
+            else:
+                # 规则 4：从维护的空位集合中随机选取（O(1) 采样）
+                if not self._empty_point:
+                    # 棋盘满，平局
+                    return 0
+                else:
+                    move_idx = random.choice(tuple(self._empty_point))
+
+            # 3. 落子并更新空位集合
+            self._board[move_idx] = self._turn
+            self._empty_point.remove(move_idx)
+
+            # 4. 为下一轮准备
+            self._last_player = self._turn
+            self._last_move_idx = move_idx
+            self._turn = self._turn % 3 + 1
+
+    # ------------------------------------------------------------------
+    # 候选落子策略（替代 _search_all_moves）
+    # ------------------------------------------------------------------
+
+    def _try_keypoint_moves(
+        self, turn: int
+    ) -> Optional[List[Tuple[int, int, int, int]]]:
+        """尝试按必胜点优先级获取候选落子，不命中时返回 None。
+
+        规则（与 _search_all_moves 完全一致）：
+        1. 自己有必胜点         → 返回自己的必胜点列表
+        2. 下家恰好 1 个必胜点，且上家不超过一个必胜点  → 返回下家的那一个（堵截）
+        3. 上家有 2+ 个必胜点   → 返回上家的必胜点列表（破坏）
+        4. 否则                 → 返回 None，由调用方使用空位集合
+
+        返回:
+            命中规则时返回四维坐标列表，否则返回 None。
+        """
+        down = turn % 3 + 1
+        up = (turn - 2) % 3 + 1
+        own_kp = self._key_points[turn]
+        down_kp = self._key_points[down]
+        up_kp = self._key_points[up]
+
+        # 规则 1：自己有必胜点
+        if own_kp:
+            return list(own_kp)
+
+        # 规则 2：下家恰好一个必胜点，且上家不超过一个
+        if len(down_kp) == 1 and len(up_kp) <= 1:
+            return list(down_kp)
+
+        # 规则 3：自己和下家无必胜点，上家 2+
+        if len(down_kp) == 0 and len(up_kp) >= 2:
+            return list(up_kp)
+
+        # 规则 4：不适用，交给空位集合处理
+        return None
 
 
 # ============================================================================
@@ -369,30 +458,30 @@ class ABMCTSEngine:
         print()
         return best.move, elapsed, actual_iters
 
-    # [DEPRECATED] _select 已内联到 engine_move 中，请勿使用
-    def _select(self, root: _AB_Node) -> _AB_Node:
-        """选择下一个需要模拟的叶节点。
+    # # [DEPRECATED] _select 已内联到 engine_move 中，请勿使用
+    # def _select(self, root: _AB_Node) -> _AB_Node:
+    #     """选择下一个需要模拟的叶节点。
 
-        仅在 root 层展开子节点（含必胜点剪枝），子节点不再继续展开。
-        策略：
-            1. 首次调用时展开 root 的所有子节点
-            2. 优先随机探索未访问过的子节点
-            3. 全部访问过之后用 UCB1 公式选择最优子节点
-        """
-        # 首次调用：展开 root 的所有子节点（利用必胜点剪枝）
-        if not root.children:
-            root.Make_All_Children()
-            print(f"[INFO TIAN] root 层展开 {len(root.children)} 个子节点")
-            if not root.children:
-                raise RuntimeError("无可落子位置")
+    #     仅在 root 层展开子节点（含必胜点剪枝），子节点不再继续展开。
+    #     策略：
+    #         1. 首次调用时展开 root 的所有子节点
+    #         2. 优先随机探索未访问过的子节点
+    #         3. 全部访问过之后用 UCB1 公式选择最优子节点
+    #     """
+    #     # 首次调用：展开 root 的所有子节点（利用必胜点剪枝）
+    #     if not root.children:
+    #         root.Make_All_Children()
+    #         print(f"[INFO TIAN] root 层展开 {len(root.children)} 个子节点")
+    #         if not root.children:
+    #             raise RuntimeError("无可落子位置")
 
-        # 优先随机探索尚未访问过的子节点
-        unvisited = [c for c in root.children if c.visits == 0]
-        if unvisited:
-            return random.choice(unvisited)
+    #     # 优先随机探索尚未访问过的子节点
+    #     unvisited = [c for c in root.children if c.visits == 0]
+    #     if unvisited:
+    #         return random.choice(unvisited)
 
-        # 所有子节点都至少访问过一次，用 UCB1 选最优
-        return root.best_child(self.player_id)
+    #     # 所有子节点都至少访问过一次，用 UCB1 选最优
+    #     return root.best_child(self.player_id)
 
 
     # ==========================================================================
