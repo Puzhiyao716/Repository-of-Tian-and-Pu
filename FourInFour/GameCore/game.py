@@ -305,10 +305,13 @@ class GameRoom:
                 "index": index,
             },
         }
-        result["thinking"] = {
-            "time": round(thinking_time, 3),
-            "iters": thinking_iters,
-        }
+
+        if thinking_time > 0.0 or thinking_iters > 0:
+            result["thinking"] = {
+                "time": round(thinking_time, 3),
+                "iters": thinking_iters,
+            }
+
         return result
 
     # ------------------------------------------------------------------
