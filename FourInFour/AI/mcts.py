@@ -26,6 +26,8 @@ from FourInFour.GameCore.board import (
 
 # UCB1 探索参数（√2 是理论最优值）
 UCB_C = 1.414
+# 截断深度
+MAX_DEPTH = 7
 
 
 # ============================================================================
@@ -203,7 +205,7 @@ class MCTSEngine:
         从根出发选叶节点。每层由「当前回合玩家」选对自己最有利的子节点，
         体现「每个对手都为自己的胜利而奋斗」。
         """
-        for _ in range(7):
+        for _ in range(MAX_DEPTH):
             if self._is_terminal(node):
                 return node
 
