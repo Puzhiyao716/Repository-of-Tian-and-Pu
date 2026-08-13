@@ -29,7 +29,7 @@ import time
 from typing import List, Tuple, Optional, Dict, Set
 from dataclasses import dataclass
 
-from FourInFour.GameCore import (
+from ..GameCore import (
     EMPTY, TOTAL_CELLS,
     pos_4d_to_index, pos_4d_to_2d,
     pos_index_to_4d, check_win_at,

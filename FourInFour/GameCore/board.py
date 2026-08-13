@@ -13,7 +13,7 @@
     - 所有获胜线在模块加载时一次性预计算并缓存，之后只做 O(1) 查表
 """
 
-from typing import List, Tuple, Set
+from typing import List, Tuple, Set, Literal
 
 # ============================================================================
 # 常量定义
@@ -94,7 +94,7 @@ def pos_index_to_4d(index: int) -> Tuple[int, int, int, int]:
 # 获胜线预计算
 # ============================================================================
 
-def _generate_all_winning_lines() -> List[List[int]]:
+def _generate_all_winning_lines() -> List[Tuple[int, int, int, int]]:
     """
     预计算 4D 棋盘上所有可能的获胜线。
 
@@ -103,7 +103,7 @@ def _generate_all_winning_lines() -> List[List[int]]:
         且均在棋盘范围内。方向向量各分量 ∈ {-1, 0, 1} 且不全为 0。
 
     返回：
-        二维列表，每个元素是一条获胜线，存储该线上 4 个位置的一维索引。
+        列表，每个元素是一条获胜线（4 元组），存储该线上 4 个位置的一维索引。
     """
     # 步骤1：生成所有 80 个合法方向向量 (3^4 - 1 = 80)
     directions: List[Tuple[int, int, int, int]] = []
@@ -116,7 +116,7 @@ def _generate_all_winning_lines() -> List[List[int]]:
                     directions.append((dw, dx, dy, dz))
 
     # 步骤2：枚举所有 (起点 × 方向)，收集合法线段
-    lines: List[List[int]] = []
+    lines: List[Tuple[int, int, int, int]] = []
     seen: Set[frozenset] = set()  # 用 frozenset 去重
 
     for w in range(BOARD_SIZE):
@@ -145,35 +145,31 @@ def _generate_all_winning_lines() -> List[List[int]]:
                         key = frozenset(indices)
                         if key not in seen:
                             seen.add(key)
-                            lines.append(indices)
+                            lines.append(tuple(indices))
 
     return lines
 
 
 # 模块加载时一次性预计算，后续只读取
-WINNING_LINES: List[List[int]] = _generate_all_winning_lines()
+WINNING_LINES: List[Tuple[int, int, int, int]] = _generate_all_winning_lines()
 
 # ============================================================================
 # 索引 → 获胜线映射（用于加速增量式检测）
 # ============================================================================
 
-def _build_lines_by_cell() -> List[List[List[int]]]:
+def _build_lines_by_cell() -> List[List[Tuple[int, int, int, int]]]:
     """
     构建"位置 → 经过该位置的获胜线列表"的映射。
     供增量式胜负检测使用：落子后只检查经过该位置的线。
     """
-    lines_by_cell: List[List[List[int]]] = [[] for _ in range(TOTAL_CELLS)]
+    lines_by_cell: List[List[Tuple[int, int, int, int]]] = [[] for _ in range(TOTAL_CELLS)]
     for line in WINNING_LINES:
         for idx in line:
             lines_by_cell[idx].append(line)
     return lines_by_cell
 
 
-LINES_BY_CELL: List[List[List[int]]] = _build_lines_by_cell()
-# print("[TESTINFO] 预计算完成：总线数：", len(WINNING_LINES), "总位置数：", len(LINES_BY_CELL))
-# print(f"[TESTINFO] WINNING_LINES : {type(WINNING_LINES)}, LINES_BY_CELL : {type(LINES_BY_CELL)}")
-# print(f"[TESTINFO] WINNING_LINES : {type(WINNING_LINES[0])}, LINES_BY_CELL : {type(LINES_BY_CELL[0])}")
-# print(f"[TESTINFO] WINNING_LINES : {len(WINNING_LINES[0])}, LINES_BY_CELL : {len(LINES_BY_CELL[0])}")
+LINES_BY_CELL: List[List[Tuple[int, int, int, int]]] = _build_lines_by_cell()
 
 # ============================================================================
 # 胜负检测（增量式）
@@ -182,7 +178,7 @@ LINES_BY_CELL: List[List[List[int]]] = _build_lines_by_cell()
 def check_win_at(
     board: List[int],
     last_move_index: int,
-    player: int,
+    player: Literal[1, 2, 3],
     potential_win: bool = False
 ):
     """
@@ -199,9 +195,9 @@ def check_win_at(
         bool — True 表示该玩家已四连获胜
 
     返回（potential_win=True）：
-        (has_won: bool, pot_points: List[List[int]])
+        (has_won: bool, pot_points: List[Tuple[int, int, int, int]])
         has_won    — True 表示该玩家已四连获胜（此时 pot_points 为空）
-        pot_points — 必胜点 2D 坐标列表 [[row, col], ...]，至多两个
+        pot_points — 必胜点 4D 坐标元组列表 [(w, x, y, z), ...]，至多四个
     """
     lines = LINES_BY_CELL[last_move_index]
 
@@ -214,11 +210,13 @@ def check_win_at(
                 return True
         return False
 
-    # ---- 完整路径：检测胜负 + 至多两个必胜点 ----
+    # ---- 完整路径：检测胜负 + 至多四个必胜点 ----
     pot_points: List[Tuple[int, int, int, int]] = []
 
     for line in lines:
+        # 先获取该线段上所有格子的编号
         i0, i1, i2, i3 = line
+        # 然后获取这些格子里的棋子
         c0, c1, c2, c3 = board[i0], board[i1], board[i2], board[i3]
 
         # 三子已占 → 检查剩余一格是否为空（即必胜点）
