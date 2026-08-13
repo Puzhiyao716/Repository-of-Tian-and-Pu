@@ -27,6 +27,7 @@ import math
 import random
 import time
 from typing import List, Tuple, Optional, Dict, Set
+from dataclasses import dataclass
 
 from FourInFour.GameCore import (
     EMPTY, TOTAL_CELLS,
@@ -45,10 +46,19 @@ _INDEX_TO_4D: List[Tuple[int, int, int, int]] = [
     pos_index_to_4d(i) for i in range(TOTAL_CELLS)
 ]
 
+@dataclass
+class SimulationResult:
+    """一次模拟至终局的结果统计。
 
-# ============================================================================
-# MCTS 节点
-# ============================================================================
+    winner:          胜者编号（1/2/3），0 表示平局
+    keypoint_counts: 各玩家按必胜点规则落子的次数 {player_id: count}
+    random_counts:   各玩家随机落子的次数 {player_id: count}
+    total_steps:     整个模拟期间的总落子步数
+    """
+    winner: int
+    keypoint_steps: Dict[int, int]
+    random_counts: Dict[int, int]
+    total_steps: int
 
 class _AB_Node:
     """MCTS 搜索树节点（带 Alphabet 剪枝）。"""
@@ -76,7 +86,7 @@ class _AB_Node:
         # ---- MCTS 统计 ----
         self.children: List["_AB_Node"] = []                       # 子节点列表
         self.visits: int = 0                                       # 被访问次数
-        self.wins: Dict[int, int] = {1: 0, 2: 0, 3: 0}            # 各玩家视角的获胜次数
+        self.scores: Dict[int, float] = {1: 0.0, 2: 0.0, 3: 0.0}  # 各玩家视角的累计分数（0-1）
         self._untried: Optional[List[Tuple[int, int, int, int]]] = None  # 尚未尝试的落子（惰性初始化）
         self.winner: Optional[int] = None                          # 终局标记（None=未确定, 0=平局）
 
@@ -178,24 +188,85 @@ class _AB_Node:
 
         return False
         
-    def _simulate(self) -> int:
-        """从当前节点出发进行随机模拟至终局，委托 Simulator 执行。
-
-        返回胜者编号（1/2/3），或 0 表示平局。
+    def _value(self) -> Dict[int, float]:
         """
-        return Simulator(
+        评价该节点，返回三个玩家的分数 {player_id: 0-1 浮点数}。
+
+        目前规则：胜利方得 1.0，其余方得 0.0；平局则三方均得 0.0。
+        """
+        result = Simulator(
             board=self.board,
             turn=self.turn,
             key_points=self.Key_Points,
             last_player=self.up_player,
             last_move_idx=self.move_idx,
         ).run()
-   
+        # print(result)
+        return _AB_Node._score_from_result(result)
+
+    @staticmethod
+    def _score_from_result(result: SimulationResult) -> Dict[int, float]:
+        """
+        根据棋局状况，返回三个玩家的分数 {player_id: 0-1 浮点数}。
+        """
+        scores: Dict[int, float] = {1: 0.0, 2: 0.0, 3: 0.0}
+
+        if result.winner in [1, 2, 3]:
+            # 首先剔除获胜者最后一次落子的必胜点操作
+            result.keypoint_steps[result.winner] -= 1
+
+        # 剩余keypoint_counts均代表“堵他人”的步数
+        control_value : Dict[int, int] = {}
+        win_value : Dict[int, float] = {}
+        all_keypoint_steps = sum(result.keypoint_steps.values())
+
+        for i in (1,2,3):
+            # 控制分，别人被迫走必胜点的次数越多，分数越高，自己反之
+            control_value[i] = all_keypoint_steps - result.keypoint_steps[i] * 3
+            # 获胜分，棋局获胜的情况下，随机步数越少，分值越高（棋局越有价值
+        # print(control_value)
+
+        if result.winner in (1,2,3):
+            win_value[result.winner] = _AB_Node.game_length_value(
+                random_steps = sum(result.random_counts.values()) - result.random_counts[result.winner]
+            ) # 输入是输棋双方的随机步数，步数越大，棋局越没有说服力
+        # print(win_value)  
+
+        scores = {i: control_value[i] * 0.1 + win_value.get(i, 0.0) for i in (1,2,3)}
+
+        return scores
+
+    @staticmethod
+    def game_length_value(random_steps: int) -> float:
+        """
+        random_steps : int -> [0, 171]
+        步数越大，分数越小。
+        - 输入 <= 12，输出 1.0
+        - 输入 = 171，输出 0.3
+        - 12 到 171 之间等间距线性衰减
+        """
+        # 1. 小于等于12，直接返回满分
+        if random_steps <= 12:
+            return 1.0
+        
+        # 2. 大于等于171，直接返回最低分（防止越界导致负数）
+        if random_steps >= 171:
+            return 0.3
+        
+        # 3. 在 12 到 171 之间进行线性衰减
+        # 衰减比例 = (当前步数 - 12) / (171 - 12)
+        decay_ratio = (random_steps - 12) / (171 - 12)
+        
+        # 分数从 1.0 线性下降到 0.3，总降幅为 0.7
+        score = 1.0 - 0.7 * decay_ratio
+        
+        return score
+
     def _ucb1(self, player: int) -> float:
         """本节点在指定玩家视角下的 UCB1 值。未访问过 → 无穷大。"""
         if self.visits == 0:
             return float("inf")
-        return (self.wins[player] / self.visits) + UCB_C * math.sqrt(
+        return (self.scores[player] / self.visits) + UCB_C * math.sqrt(
             math.log(self.parent.visits) / self.visits
         )
 
@@ -283,42 +354,59 @@ class Simulator:
             i for i, v in enumerate(board) if v == EMPTY
         }
 
+        # 模拟统计：各玩家按必胜点/随机落子的次数，以及总步数
+        self._keypoint_counts: Dict[int, int] = {1: 0, 2: 0, 3: 0}
+        self._random_counts: Dict[int, int] = {1: 0, 2: 0, 3: 0}
+        self._total_steps: int = 0
+
     # ------------------------------------------------------------------
     # 对外接口
     # ------------------------------------------------------------------
 
-    def run(self) -> int:
-        """执行模拟至终局，返回胜者编号（1/2/3）或 0 表示平局。"""
+    def run(self) -> "SimulationResult":
+        """执行模拟至终局，返回结果统计（胜者、各玩家落子方式计数、总步数）。"""
         while True:
             # 1. 检测上一手是否已获胜并更新必胜点
             if _AB_Node._check_win_and_renew_keypoint(
                 self._board, self._last_move_idx,
                 self._last_player, self._key_points
             ):
-                return self._last_player
+                return self._build_result(self._last_player)
 
             # 2. 获取候选落子：优先必胜点策略，否则从空位集合随机选取
             priority = self._try_keypoint_moves(self._turn)
             if priority is not None:
-                # 规则 1-3 命中：从 KeyPoint 列表中随机选
+                # 规则 1-3 命中：按必胜点规则落子
+                self._keypoint_counts[self._turn] += 1
                 w, x, y, z = random.choice(priority)
                 move_idx = pos_4d_to_index(w, x, y, z)
             else:
                 # 规则 4：从维护的空位集合中随机选取（O(1) 采样）
                 if not self._empty_point:
                     # 棋盘满，平局
-                    return 0
+                    return self._build_result(0)
                 else:
+                    self._random_counts[self._turn] += 1
                     move_idx = random.choice(tuple(self._empty_point))
 
             # 3. 落子并更新空位集合
             self._board[move_idx] = self._turn
             self._empty_point.remove(move_idx)
+            self._total_steps += 1
 
             # 4. 为下一轮准备
             self._last_player = self._turn
             self._last_move_idx = move_idx
             self._turn = self._turn % 3 + 1
+
+    def _build_result(self, winner: int) -> "SimulationResult":
+        """根据胜者编号构建结果统计对象（返回计数副本，避免外部修改内部状态）。"""
+        return SimulationResult(
+            winner=winner,
+            keypoint_steps=self._keypoint_counts.copy(),
+            random_counts=self._random_counts.copy(),
+            total_steps=self._total_steps,
+        )
 
     # ------------------------------------------------------------------
     # 候选落子策略（替代 _search_all_moves）
@@ -349,7 +437,7 @@ class Simulator:
             return list(own_kp)
 
         # 规则 2：下家恰好一个必胜点，且上家不超过一个
-        if len(down_kp) == 1 and len(up_kp) <= 1:
+        if len(down_kp) in (1, 2) and len(up_kp) <= 1:
             return list(down_kp)
 
         # 规则 3：自己和下家无必胜点，上家 2+
@@ -426,7 +514,7 @@ class ABMCTSEngine:
         t0 = time.perf_counter()
         actual_iters = 0
         # 每 N 轮检查一次时间，减少系统调用
-        _TIME_CHECK_INTERVAL = 20
+        _TIME_CHECK_INTERVAL = 10
         for _ in range(self.max_iters):
             actual_iters += 1
             if actual_iters % _TIME_CHECK_INTERVAL == 0:
@@ -441,7 +529,8 @@ class ABMCTSEngine:
             else:
                 leaf = root.best_child(self.player_id)
 
-            score = leaf._simulate()                # 2. Simulation
+            score = leaf._value()                # 2. Simulation
+            # print(f"[INFO TIAN] 模拟 {leaf.move}，得分: {score}")  # 2. Simulation
             self._backprop(leaf, score)             # 3. Backpropagation
 
         best = max(root.children, key=lambda c: c.visits)
@@ -451,49 +540,23 @@ class ABMCTSEngine:
         print(f"[INFO TIAN] 总迭代: {actual_iters}, 耗时: {elapsed:.3f}s")
         print(f"[INFO TIAN] 最佳落子: {best.move}, "
               f"Visits: {best.visits}, "
-              f"胜率: P1={best.wins[1]/best.visits:.3f} "
-              f"P2={best.wins[2]/best.visits:.3f} "
-              f"P3={best.wins[3]/best.visits:.3f}")
+              f"平均分: P1={best.scores[1]/best.visits:.3f} "
+              f"P2={best.scores[2]/best.visits:.3f} "
+              f"P3={best.scores[3]/best.visits:.3f}")
         print()
         return best.move, elapsed, actual_iters
-
-    # # [DEPRECATED] _select 已内联到 engine_move 中，请勿使用
-    # def _select(self, root: _AB_Node) -> _AB_Node:
-    #     """选择下一个需要模拟的叶节点。
-
-    #     仅在 root 层展开子节点（含必胜点剪枝），子节点不再继续展开。
-    #     策略：
-    #         1. 首次调用时展开 root 的所有子节点
-    #         2. 优先随机探索未访问过的子节点
-    #         3. 全部访问过之后用 UCB1 公式选择最优子节点
-    #     """
-    #     # 首次调用：展开 root 的所有子节点（利用必胜点剪枝）
-    #     if not root.children:
-    #         root.Make_All_Children()
-    #         print(f"[INFO TIAN] root 层展开 {len(root.children)} 个子节点")
-    #         if not root.children:
-    #             raise RuntimeError("无可落子位置")
-
-    #     # 优先随机探索尚未访问过的子节点
-    #     unvisited = [c for c in root.children if c.visits == 0]
-    #     if unvisited:
-    #         return random.choice(unvisited)
-
-    #     # 所有子节点都至少访问过一次，用 UCB1 选最优
-    #     return root.best_child(self.player_id)
-
 
     # ==========================================================================
     # Backpropagation
     # ==========================================================================
 
     @staticmethod
-    def _backprop(node: _AB_Node, winner: int) -> None:
-        """结果向上传播。"""
+    def _backprop(node: _AB_Node, score: Dict[int, float]) -> None:
+        """将一次模拟的分数向量向上传播。"""
         while node is not None:
             node.visits += 1
-            if winner != 0:
-                node.wins[winner] += 1
+            for pid in (1, 2, 3):
+                node.scores[pid] += score[pid]
             node = node.parent
 
     # ==========================================================================
@@ -535,13 +598,3 @@ class ABMCTSEngine:
                         result[playerid].add(pt)
 
         return result
-
-    @staticmethod
-    def _is_terminal(node: _AB_Node) -> bool:
-        """检查节点是否为终局状态。"""
-        if node.winner is not None:
-            return True
-        if not any(v == EMPTY for v in node.board):
-            node.winner = 0
-            return True
-        return False
